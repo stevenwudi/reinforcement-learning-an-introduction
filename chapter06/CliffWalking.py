@@ -240,7 +240,7 @@ def figure6_7():
     plt.legend()
 
 # Drawing figure 6.7 may take a while
-figure6_7()
+# figure6_7()
 
 figure6_5()
 plt.show()

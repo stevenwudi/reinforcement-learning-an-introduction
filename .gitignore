@@ -4,3 +4,5 @@ chapter01/optimal_policy*
 latex
 *.bin
 extra
+
+*.png

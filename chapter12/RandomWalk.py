@@ -245,8 +245,8 @@ def figure12_7():
     figure12(TrueOnlineTemporalDifferenceLambda, 50, lambdas, alphas)
 
 figure12_3()
-figure12_6()
-figure12_7()
+#figure12_6()
+#figure12_7()
 plt.show()
 
 

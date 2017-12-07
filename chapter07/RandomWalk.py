@@ -31,7 +31,8 @@ START_STATE = 10
 END_STATES = [0, N_STATES + 1]
 
 # true state value from bellman equation
-realStateValues = np.arange(-20, 22, 2) / 20.0
+#realStateValues = np.arange(-20, 22, 2) / 20.0
+realStateValues = np.arange(0, 21, 1) / 20.0
 realStateValues[0] = realStateValues[-1] = 0
 
 # n-steps TD method
@@ -51,7 +52,7 @@ def temporalDifference(stateValues, n, alpha):
     time = 0
 
     # the length of this episode
-    T = float('inf')
+    # T = float('inf')
     while True:
         # go to next time step
         time += 1
@@ -63,7 +64,7 @@ def temporalDifference(stateValues, n, alpha):
             else:
                 newState = currentState - 1
             if newState == 0:
-                reward = -1
+                reward = 0
             elif newState == 20:
                 reward = 1
             else:

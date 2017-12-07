@@ -1,5 +1,7 @@
 # Reinforcement Learning: An Introduction
 
+This is a Di Wu (stevenwudi@gmail.com) modified version.
+
 [![Build Status](https://travis-ci.org/ShangtongZhang/reinforcement-learning-an-introduction.svg?branch=master)](https://travis-ci.org/ShangtongZhang/reinforcement-learning-an-introduction)
 
 Python code for Sutton & Barto's book [*Reinforcement Learning: An Introduction (2nd Edition)*](http://incompleteideas.net/sutton/book/the-book-2nd.html)

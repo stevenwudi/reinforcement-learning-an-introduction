@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import itertools
 import heapq
 
+
 class PriorityQueue:
     def __init__(self):
         self.pq = []
@@ -42,11 +43,11 @@ class PriorityQueue:
     def empty(self):
         return not self.entry_finder
 
+
 # A wrapper class for a maze, containing all the information about the maze.
 # Basically it's initialized to DynaMaze by default, however it can be easily adapted
 # to other maze
 class Maze:
-
     def __init__(self):
         # maze width
         self.WORLD_WIDTH = 9
@@ -80,13 +81,12 @@ class Maze:
 
         # max steps
         self.maxSteps = float('inf')
-        self.maxSteps = 10000
 
         # track the resolution for this maze
         self.resolution = 1
 
     # extend a state to a higher resolution maze
-    # @state: state in lower resolution maze
+    # @state: state in lower resoultion maze
     # @factor: extension factor, one state will become factor^2 states after extension
     def extendState(self, state, factor):
         newState = [state[0] * factor, state[1] * factor]
@@ -131,9 +131,9 @@ class Maze:
             reward = 0.0
         return [x, y], reward
 
+
 # a wrapper class for parameters of dyna algorithms
 class DynaParams:
-
     def __init__(self):
         # discount
         self.gamma = 0.95
@@ -165,13 +165,13 @@ def chooseAction(state, stateActionValues, maze, dynaParams):
     if np.random.binomial(1, dynaParams.epsilon) == 1:
         return np.random.choice(maze.actions)
     else:
-        values = stateActionValues[state[0], state[1], :]
-        return np.random.choice([action for action, value in enumerate(values) if value == np.max(values)])
+        # return np.argmax(stateActionValues[state[0], state[1], :])
+        return np.random.choice(np.flatnonzero(
+            stateActionValues[state[0], state[1], :] == np.max(stateActionValues[state[0], state[1], :])))
 
 
 # Trivial model for planning in Dyna-Q
 class TrivialModel:
-
     # @rand: an instance of np.random.RandomState for sampling
     def __init__(self, rand=np.random):
         self.model = dict()
@@ -192,9 +192,9 @@ class TrivialModel:
         newState, reward = self.model[state][action]
         return list(state), action, list(newState), reward
 
+
 # Time-based model for planning in Dyna-Q+
 class TimeModel:
-
     # @maze: the maze instance. Indeed it's not very reasonable to give access to maze to the model.
     # @timeWeight: also called kappa, the weight for elapsed time in sampling reward, it need to be small
     # @rand: an instance of np.random.RandomState for sampling
@@ -239,7 +239,6 @@ class TimeModel:
 
 # Model containing a priority queue for Prioritized Sweeping
 class PriorityModel(TrivialModel):
-
     def __init__(self, rand=np.random):
         TrivialModel.__init__(self, rand)
         # maintain a priority queue
@@ -301,7 +300,7 @@ def dynaQ(stateActionValues, model, maze, dynaParams):
         # Q-Learning update
         stateActionValues[currentState[0], currentState[1], action] += \
             dynaParams.alpha * (reward + dynaParams.gamma * np.max(stateActionValues[newState[0], newState[1], :]) -
-            stateActionValues[currentState[0], currentState[1], action])
+                                stateActionValues[currentState[0], currentState[1], action])
 
         # feed the model with experience
         model.feed(currentState, action, newState, reward)
@@ -310,119 +309,86 @@ def dynaQ(stateActionValues, model, maze, dynaParams):
         for t in range(0, dynaParams.planningSteps):
             stateSample, actionSample, newStateSample, rewardSample = model.sample()
             stateActionValues[stateSample[0], stateSample[1], actionSample] += \
-                dynaParams.alpha * (rewardSample + dynaParams.gamma * np.max(stateActionValues[newStateSample[0], newStateSample[1], :]) -
+                dynaParams.alpha * (
+                rewardSample + dynaParams.gamma * np.max(stateActionValues[newStateSample[0], newStateSample[1], :]) -
                 stateActionValues[stateSample[0], stateSample[1], actionSample])
 
         currentState = newState
 
         # check whether it has exceeded the step limit
         if steps > maze.maxSteps:
-            print(currentState)
             break
 
     return steps
 
 
-def walk_final_grid(stateActionValues, model, maze, dynaParams):
+# play for an episode for nstep algorithm
+# @stateActionValues: state action pair values, will be updated
+# @maze: a maze instance containing all information about the environment
+# @dynaParams: several params for the algorithm
+# @n: TD n-step
+def nstep(stateActionValues, model, maze, dynaParams):
+    n = dynaParams.planningSteps
 
-    came_from = {}
-    cost_so_far = {}
-    # came_from[tuple([maze.START_STATE[1], maze.START_STATE[0]])] = None
-    # cost_so_far[tuple([maze.START_STATE[1], maze.START_STATE[0]])] = 0
-    came_from[tuple(maze.START_STATE)] = None
-    cost_so_far[tuple(maze.START_STATE)] = 0
-    # we use the maximum here directly
-    dynaParams.epsilon = 0
-
+    # initial starting state
     currentState = maze.START_STATE
+    # get action
+    currentAction = chooseAction(currentState, stateActionValues, maze, dynaParams)
+
+    # arrays to store states and rewards for an episode
+    # space isn't a major consideration, so I didn't use the mod trick
+    states = [currentState]
+    actions = [currentAction]
+    # rewards = [0]
+    rewards = [0]
+
     steps = 0
-    while currentState not in maze.GOAL_STATES:
+    # while currentState not in maze.GOAL_STATES:
+
+    # the length of this episode
+    T = float('inf')
+    while True:
         # track the steps
         steps += 1
-
-        # get action
-        action = chooseAction(currentState, stateActionValues, maze, dynaParams)
-        # take action
-        newState, reward = maze.takeAction(currentState, action)
-        cost_so_far[tuple(newState)] = reward
-        came_from[tuple(newState)] = tuple(currentState)
-        currentState = newState
-
-        # check whether it has exceeded the step limit
-        if steps > maze.maxSteps:
-            print(currentState)
+        if steps < T:
+            # take action
+            newState, reward = maze.takeAction(currentState, currentAction)
+            # store new state and new reward
+            states.append(newState)
+            rewards.append(reward)
+            newAction = chooseAction(newState, stateActionValues, maze, dynaParams)
+            actions.append(newAction)
+            if newState in maze.GOAL_STATES:
+                T = steps
+        # get the time of the state to ft
+        updateTime = steps - n
+        if updateTime >= 0:
+            returns = 0.0
+            # calculate corresponding rewards
+            for t in range(updateTime + 1, min(T, updateTime + n) + 1):
+                returns += pow(dynaParams.gamma, t - updateTime - 1) * rewards[t]
+            # add state-action value to the return
+            upN = updateTime + n
+            if upN <= T:
+                returns += pow(dynaParams.gamma, n) * stateActionValues[
+                    states[(upN)][0], states[(upN)][1], actions[(upN)]]
+            stateToUpdate = states[updateTime]
+            # update the state-action value
+            if not stateToUpdate in maze.GOAL_STATES:
+                stateActionValues[stateToUpdate[0], stateToUpdate[1], actions[updateTime]] += dynaParams.alpha * (
+                    returns - stateActionValues[stateToUpdate[0], stateToUpdate[1], actions[updateTime]])
+        if updateTime >= T - 1:
             break
 
-    return came_from, cost_so_far
+        # check whether it has exceeded the step limit
+        if T > maze.maxSteps:
+            break
 
+        currentState = newState
+        currentAction = newAction
 
-class SquareGrid:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.walls = []
+    return T
 
-    def in_bounds(self, id):
-        (x, y) = id
-        return 0 <= x < self.width and 0 <= y < self.height
-
-    def passable(self, id):
-        return id not in self.walls
-
-    def neighbors(self, id):
-        (x, y) = id
-        results = [(x + 1, y), (x, y - 1), (x - 1, y), (x, y + 1)]
-        if (x + y) % 2 == 0: results.reverse()  # aesthetics
-        results = filter(self.in_bounds, results)
-        results = filter(self.passable, results)
-        return results
-
-
-class GridWithWeights(SquareGrid):
-    def __init__(self, width, height):
-        super().__init__(width, height)
-        self.weights = {}
-
-    def cost(self, from_node, to_node):
-        return self.weights.get(to_node, 1)
-
-
-def convert_maze_to_grid(maze):
-    """
-    This function is mainly for
-    :param maze:
-    :return:
-    """
-    # data from main article
-    diagram = GridWithWeights(maze.WORLD_WIDTH, maze.WORLD_HEIGHT)
-    diagram.walls = [tuple(x) for x in maze.obstacles]
-    return diagram
-
-
-def draw_tile(graph, id, style, width):
-    r = "."
-    if 'number' in style and id in style['number']: r = "%d" % style['number'][id]
-    if 'point_to' in style and style['point_to'].get(id, None) is not None:
-        (x1, y1) = id
-        (x2, y2) = style['point_to'][id]
-
-        if x2 == x1 + 1: r = "\u2193"
-        if x2 == x1 - 1: r = "\u2191"
-        if y2 == y1 + 1: r = "\u2192"
-        if y2 == y1 - 1: r = "\u2190"
-    if 'start' in style and id == style['start']: r = "A"
-    if 'goal' in style and id == style['goal']: r = "Z"
-    if 'path' in style and id in style['path']: r = "@"
-    if id in graph.walls: r = "#" + ' ' * (width-1)
-    return r
-
-
-def draw_grid(graph, width=2, **style):
-    for x in range(graph.height):
-        for y in range(graph.width):
-            # Note: DIWU change (x, y) to (y, x) because the notation is different here
-            print("%%-%ds" % width % draw_tile(graph, (x, y), style, width), end="")
-        print()
 
 # play for an episode for prioritized sweeping algorithm
 # @stateActionValues: state action pair values, will be updated
@@ -468,14 +434,13 @@ def prioritizedSweeping(stateActionValues, model, maze, dynaParams):
             priority, sampleState, sampleAction, sampleNewState, sampleReward = model.sample()
 
             # update the state action value for the sample
-            delta = sampleReward + dynaParams.gamma * np.max(stateActionValues[sampleNewState[0], sampleNewState[1], :]) - \
-                    stateActionValues[sampleState[0], sampleState[1], sampleAction]
-            stateActionValues[sampleState[0], sampleState[1], sampleAction] += dynaParams.alpha * delta
+            stateActionValues[sampleState[0], sampleState[1], sampleAction] += dynaParams.alpha * priority
 
             # deal with all the predecessors of the sample state
             for statePre, actionPre, rewardPre in model.predecessor(sampleState):
-                priority = np.abs(rewardPre + dynaParams.gamma * np.max(stateActionValues[sampleState[0], sampleState[1], :]) -
-                                  stateActionValues[statePre[0], statePre[1], actionPre])
+                priority = np.abs(
+                    rewardPre + dynaParams.gamma * np.max(stateActionValues[sampleState[0], sampleState[1], :]) -
+                    stateActionValues[statePre[0], statePre[1], actionPre])
                 if priority > dynaParams.theta:
                     model.insert(priority, statePre, actionPre)
             planningStep += 1
@@ -487,66 +452,67 @@ def prioritizedSweeping(stateActionValues, model, maze, dynaParams):
 
     return backups
 
-# Figure 8.3, DynaMaze, use 10 runs instead of 30 runs
-def figure8_3():
 
+# Exercise 8.1 , DynaQ & nsteps 两种方法
+def Exercise8_1():
     # set up an instance for DynaMaze
     dynaMaze = Maze()
     dynaParams = DynaParams()
 
-    runs = 10
+    runs = 5
     episodes = 50
-    planningSteps = [0, 5, 50]
-    steps = np.zeros((len(planningSteps), episodes))
+    planningSteps = np.power(2, np.arange(0, 10))
+    # planningSteps = [50]
+
+    # methods=[dynaQ,nstep]
+    methods = [nstep]
+    methodNames=['n-step', 'dynaQ']
+    methodNames=['n-step']
+
+
+    steps = np.zeros((len(methods), len(planningSteps), episodes))
 
     # this random seed is for sampling from model
     # we do need this separate random seed to make sure the first episodes for all planning steps are the same
     rand = np.random.RandomState(0)
 
     for run in range(0, runs):
-        for index, planningStep in zip(range(0, len(planningSteps)), planningSteps):
-            dynaParams.planningSteps = planningStep
+        for i in range(0, len(methods)):
+            for index, planningStep in zip(range(0, len(planningSteps)), planningSteps):
+                dynaParams.planningSteps = planningStep
 
-            # set same random seed for each planning step
-            np.random.seed(run)
+                # set same random seed for each planning step
+                np.random.seed(run)
 
-            currentStateActionValues = np.copy(dynaMaze.stateActionValues)
+                currentStateActionValues = np.copy(dynaMaze.stateActionValues)
 
-            # generate an instance of Dyna-Q model
-            model = TrivialModel(rand)
-            for ep in range(0, episodes):
-                print('run:', run, 'planning step:', planningStep, 'episode:', ep)
-                steps[index, ep] += dynaQ(currentStateActionValues, model, dynaMaze, dynaParams)
-                print(steps[index, ep])
+                # generate an instance of Dyna-Q model
+                model = TrivialModel(rand)
+                for ep in range(0, episodes):
+                    # print('run:', run, 'planning step:', planningStep, 'episode:', ep)
+                    # steps[index, ep] += dynaQ(currentStateActionValues, model, dynaMaze, dynaParams)
+                    stepnum = methods[i](currentStateActionValues, model, dynaMaze, dynaParams)
+                    print('run:', run, 'method:', methodNames[i], 'steps of planning or stepN:', planningStep,
+                          'episode:', ep, 'steps:', stepnum)
+                    steps[i, index, ep] += stepnum
 
     # averaging over runs
-    steps /= runs
+    steps /= float(runs)
 
     plt.figure(0)
-    for i in range(0, len(planningSteps)):
-        plt.plot(range(0, episodes), steps[i, :], label=str(planningSteps[i]) + ' planning steps')
-        print(steps[i, :])
+    for method in range(0, len(methods)):
+        for n in range(0, len(planningSteps)):
+            plt.plot(range(0, episodes), steps[method, n, :],
+                     label=str(methodNames[method]) + '_' + str(planningSteps[n]) + ' planning or n-step steps')
     plt.xlabel('episodes')
     plt.ylabel('steps per episode')
     plt.legend()
 
-    # walk the maximum
-    from chapter08.Astar import a_star_search
-
-    came_from, cost_so_far = walk_final_grid(currentStateActionValues, model, dynaMaze, dynaParams)
-    diagram = convert_maze_to_grid(dynaMaze)
-    draw_grid(diagram, width=3, point_to=came_from,
-              start=tuple(dynaMaze.START_STATE), goal=tuple(dynaMaze.GOAL_STATES[0]))
-    print()
-
-    came_from, cost_so_far = a_star_search(diagram, tuple(dynaMaze.START_STATE), tuple(dynaMaze.GOAL_STATES[0]))
-    #draw_grid_a_star(diagram, width=3, point_to=came_from, start=tuple(dynaMaze.START_STATE), goal=tuple(dynaMaze.GOAL_STATES[0]))
 
 # wrapper function for changing maze
 # @maze: a maze instance
 # @dynaParams: several parameters for dyna algorithms
 def changingMaze(maze, dynaParams):
-
     # set up max steps
     maxSteps = maze.maxSteps
 
@@ -590,6 +556,7 @@ def changingMaze(maze, dynaParams):
     rewards /= dynaParams.runs
 
     return rewards
+
 
 # Figure 8.5, BlockingMaze
 def figure8_5():
@@ -636,6 +603,7 @@ def figure8_5():
     plt.ylabel('cumulative reward')
     plt.legend()
 
+
 # Figure 8.6, ShortcutMaze
 def figure8_6():
     # set up a shortcut maze instance
@@ -681,6 +649,7 @@ def figure8_6():
     plt.ylabel('cumulative reward')
     plt.legend()
 
+
 # Helper function to display best actions, just for debug
 def printActions(stateActionValues, maze):
     bestActions = []
@@ -706,6 +675,7 @@ def printActions(stateActionValues, maze):
         print(row)
     print('')
 
+
 # Check whether state-action values are already optimal
 def checkPath(stateActionValues, maze):
     # get the length of optimal path
@@ -721,6 +691,7 @@ def checkPath(stateActionValues, maze):
         if steps > maxSteps:
             return False
     return True
+
 
 # Figure 8.7, mazes with different resolution
 def figure8_7():
@@ -800,8 +771,9 @@ def figure8_7():
     plt.yscale('log')
     plt.legend()
 
-#figure8_3()
-#figure8_5()
-#figure8_6()
-figure8_7()
+
+Exercise8_1()
+# figure8_5()
+# figure8_6()
+# figure8_7()
 plt.show()
