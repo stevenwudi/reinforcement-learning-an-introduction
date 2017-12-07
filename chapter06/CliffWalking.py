@@ -76,7 +76,9 @@ def sarsa(stateActionValues, expected=False, stepSize=ALPHA):
     currentState = startState
     currentAction = chooseAction(currentState, stateActionValues)
     rewards = 0.0
+    time_step = 0
     while currentState != goalState:
+        time_step += 1
         newState = actionDestination[currentState[0]][currentState[1]][currentAction]
         newAction = chooseAction(newState, stateActionValues)
         reward = actionRewards[currentState[0], currentState[1], currentAction]
@@ -99,6 +101,7 @@ def sarsa(stateActionValues, expected=False, stepSize=ALPHA):
             valueTarget - stateActionValues[currentState[0], currentState[1], currentAction])
         currentState = newState
         currentAction = newAction
+    print(time_step)
     return rewards
 
 # an episode with Q-Learning
@@ -240,7 +243,7 @@ def figure6_7():
     plt.legend()
 
 # Drawing figure 6.7 may take a while
-# figure6_7()
+#figure6_7()
 
 figure6_5()
 plt.show()
