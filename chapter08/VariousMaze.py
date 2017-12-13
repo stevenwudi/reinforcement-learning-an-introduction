@@ -800,7 +800,7 @@ def figure8_7():
     plt.yscale('log')
     plt.legend()
 
-#figure8_3()
+figure8_3()
 #figure8_5()
 #figure8_6()
 figure8_7()

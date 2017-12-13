@@ -9,6 +9,7 @@
 from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
+from chapter06.A_star_3D import a_star_search_3D, heuristic
 
 # A wrapper class for a maze, containing all the information about the maze.
 # Basically it's initialized to DynaMaze by default, however it can be easily adapted
@@ -24,11 +25,11 @@ class Maze:
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state
-        self.START_STATE = [3, 0]
+        self.START_STATE = [self.WORLD_HEIGHT-1, 0]
         # goal state
-        self.GOAL_STATES = [3, 11]
+        self.GOAL_STATES = [self.WORLD_HEIGHT-1, 11]
         # all obstacles
-        self.cliff = [[3, x] for x in range(1, 11)]
+        self.cliff = [[self.WORLD_HEIGHT-1, x] for x in range(1, self.WORLD_WIDTH-1)]
         self.obstacles = self.cliff
 
         self.oldObstacles = None
@@ -108,7 +109,9 @@ class TD_learning:
         :param gamma: gamma for Expected Sarsa
         """
         self.maze = maze
-        # initial state Action Values --> which are all zeros
+        # initial state Action Values --> which are all zeros or it is such a bad choise?
+        #self.heuristic = heuristic(maze.START_STATE, maze.GOAL_STATES)
+        #self.stateActionValues = np.ones((maze.WORLD_HEIGHT, maze.WORLD_WIDTH, len(maze.actions))) * self.heuristic
         self.stateActionValues = np.zeros((maze.WORLD_HEIGHT, maze.WORLD_WIDTH, len(maze.actions)))
         self.expected = expected
         self.qLearning = qLearning
@@ -171,7 +174,8 @@ class TD_learning:
                 currentState = newState
             print(time_step)
 
-        return rewards
+        max_q = np.sum(np.max(self.stateActionValues, axis=2))
+        return rewards, max_q
 
 
 # print optimal policy
@@ -252,35 +256,32 @@ def draw_grid(graph, width=2, **style):
         print()
 
 
-class SquareGrid:
-    def __init__(self, width, height):
+class GridWithWeights:
+    def __init__(self, width, height, wall_wind):
         self.width = width
         self.height = height
-        self.walls = []
+        self.wall_wind = wall_wind
+        self.weights = []
 
     def in_bounds(self, id):
         (x, y) = id
-        return 0 <= x < self.width and 0 <= y < self.height
+        return 0 <= x < self.height and 0 <= y < self.width
 
-    def passable(self, id):
-        return id not in self.walls
+    def in_wind(self, id):
+        (x, y) = id
+        return self.weights[x, y] < self.wall_wind
 
     def neighbors(self, id):
         (x, y) = id
-        results = [(x + 1, y), (x, y - 1), (x - 1, y), (x, y + 1)]
-        if (x + y) % 2 == 0: results.reverse()  # aesthetics
+        # Voila, time only goes forward, but we can stay in the same position
+        results = [(x + 1, y), (x, y - 1), (x - 1, y), (x, y + 1), (x, y)]
         results = filter(self.in_bounds, results)
-        results = filter(self.passable, results)
+        # we also need within the wall wind limit
+        # results = filter(self.in_wind, results)  # However, with this condition, we might never find a route
         return results
 
-
-class GridWithWeights(SquareGrid):
-    def __init__(self, width, height):
-        super().__init__(width, height)
-        self.weights = {}
-
     def cost(self, to_node):
-        return self.weights.get(to_node, 1)
+        return self.weights[to_node]
 
 
 def convert_maze_to_grid(maze):
@@ -290,42 +291,59 @@ def convert_maze_to_grid(maze):
     :return:
     """
     # data from main article
-    diagram = GridWithWeights(maze.WORLD_WIDTH, maze.WORLD_HEIGHT)
+    diagram = GridWithWeights(width=maze.WORLD_WIDTH, height=maze.WORLD_HEIGHT, wall_wind=-maze.reward_cliff)
     diagram.walls = [tuple(x) for x in maze.obstacles]
-    return diagram
+    diagram.weights = np.ones(shape=(maze.WORLD_HEIGHT, maze.WORLD_WIDTH))
+    for c in maze.cliff:
+        diagram.weights[c[0], c[1]] = -maze.reward_cliff
 
+    return diagram
 
 
 def figure6_5():
     # set up an instance for DynaMaze
     dynaMaze = Maze()
 
+    # A star algorithm here
+    diagram = convert_maze_to_grid(dynaMaze)
+    A_star_came_from, A_star_cost_so_far = a_star_search_3D(diagram, start=tuple(dynaMaze.START_STATE), goals=[tuple(dynaMaze.GOAL_STATES)])
+    draw_grid(diagram, width=3, point_to=A_star_came_from,
+              start=tuple(dynaMaze.START_STATE), goals=tuple(dynaMaze.GOAL_STATES))
     # averaging the reward sums from 10 successive episodes
     averageRange = 10
 
     # episodes of each run
-    nEpisodes = 500
+    nEpisodes = 13
 
     # perform 20 independent runs
-    runs = 20
+    runs = 10
 
     rewardsSarsa = np.zeros(nEpisodes)
     rewardsExpectedSarsa = np.zeros(nEpisodes)
     rewardsQLearning = np.zeros(nEpisodes)
+    QSarsa = np.zeros(nEpisodes)
+    QExpectedSarsa = np.zeros(nEpisodes)
+    QQLearning = np.zeros(nEpisodes)
     for run in range(0, runs):
         sarsa = TD_learning(dynaMaze)
         expected_sarsa = TD_learning(dynaMaze, expected=True)
         qLearning = TD_learning(dynaMaze, qLearning=True)
         for i in range(0, nEpisodes):
             # cut off the value by -100 to draw the figure more elegantly
-            rewardsSarsa[i] += max(sarsa.play(), -100)
-            rewardsExpectedSarsa[i] += max(expected_sarsa.play(), -100)
-            rewardsQLearning[i] += max(qLearning.play(), -100)
+            rewards, max_q = sarsa.play()
+            rewardsSarsa[i], QSarsa[i] = rewardsSarsa[i]+max(rewards, -100), QSarsa[i] + max_q
+            rewards, max_q = expected_sarsa.play()
+            rewardsExpectedSarsa[i], QExpectedSarsa[i] = rewardsExpectedSarsa[i]+max(rewards, -100), QExpectedSarsa[i] + max_q
+            rewards, max_q = qLearning.play()
+            rewardsQLearning[i], QQLearning[i] = rewardsQLearning[i] + max(rewards, -100), QQLearning[i] + max_q
 
-    # averaging over independt runs
+    # averaging over independent runs
     rewardsSarsa /= runs
     rewardsExpectedSarsa /= runs
     rewardsQLearning /= runs
+    QSarsa /= runs
+    QExpectedSarsa /= runs
+    QQLearning /= runs
 
     # averaging over successive episodes
     smoothedRewardsSarsa = np.copy(rewardsSarsa)
@@ -352,7 +370,15 @@ def figure6_5():
     plt.ylabel('Sum of rewards during episode')
     plt.legend()
 
-    diagram = convert_maze_to_grid(dynaMaze)
+    # draw Q curves
+    plt.figure(2)
+    plt.plot(QSarsa, label='Sarsa')
+    plt.plot(QExpectedSarsa, label='Expected Sarsa')
+    plt.plot(QQLearning, label='Q-Learning')
+    plt.xlabel('Episodes')
+    plt.ylabel('Max Q during episode')
+    plt.legend()
+
     print('sarsa')
     came_from, cost_so_far = walk_final_grid(sarsa)
     draw_grid(diagram, width=3, point_to=came_from,
