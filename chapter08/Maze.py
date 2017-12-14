@@ -5,9 +5,10 @@ import numpy as np
 # Basically it's initialized to DynaMaze by default, however it can be easily adapted
 # to other maze
 class Maze:
-    def __init__(self):
-        self.WORLD_WIDTH = 9
-        self.WORLD_HEIGHT = 6
+    def __init__(self, width, height, start_state, goal_states, obstacles=None, return_to_start=True,
+                 reward_goal=0.0, reward_move=-1.0, reward_obstacle=-100.):
+        self.WORLD_WIDTH = width
+        self.WORLD_HEIGHT = height
         # all possible actions
         self.ACTION_UP = 0
         self.ACTION_DOWN = 1
@@ -16,19 +17,20 @@ class Maze:
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state
-        self.START_STATE = [2, 0]
+        self.START_STATE = start_state
         # goal state
-        self.GOAL_STATES = [[0, 8]]
+        self.GOAL_STATES = goal_states
 
-        # all cliff
-        self.reward_goal = 0.0
-        self.reward_move = -1.0
-        self.reward_cliff = -100
-        self.cliff = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
+        # all obstacles
+        self.reward_goal = reward_goal
+        self.reward_move = reward_move
+        self.reward_obstacle = reward_obstacle
+        self.obstacles = obstacles
+        self.return_to_start = return_to_start
         self.oldObstacles = None
         self.newObstacles = None
 
-        # time to change cliff
+        # time to change obstacles
         self.changingPoint = None
 
         # max steps
@@ -57,9 +59,9 @@ class Maze:
         newMaze.WORLD_HEIGHT = self.WORLD_HEIGHT * factor
         newMaze.START_STATE = [self.START_STATE[0] * factor, self.START_STATE[1] * factor]
         newMaze.GOAL_STATES = self.extendState(self.GOAL_STATES[0], factor)
-        newMaze.cliff = []
-        for state in self.cliff:
-            newMaze.cliff.extend(self.extendState(state, factor))
+        newMaze.obstacles  = []
+        for state in self.obstacles :
+            newMaze.obstacles .extend(self.extendState(state, factor))
         newMaze.stateActionValues = np.zeros((newMaze.WORLD_HEIGHT, newMaze.WORLD_WIDTH, len(newMaze.actions)))
         newMaze.resolution = factor
         return newMaze
@@ -76,17 +78,16 @@ class Maze:
             y = max(y - 1, 0)
         elif action == self.ACTION_RIGHT:
             y = min(y + 1, self.WORLD_WIDTH - 1)
-        if [x, y] in self.cliff:
-            x, y = self.START_STATE
-            #x, y = state
-            reward = self.reward_cliff
-            #reward = 0
+        if [x, y] in self.obstacles:
+            if self.return_to_start:
+                x, y = self.START_STATE
+            else:
+                x, y = state
+            reward = self.reward_obstacle
         elif [x, y] in self.GOAL_STATES:
             reward = self.reward_goal
-            #reward = 1.0
         else:
             reward = self.reward_move
-            #reward = 0
         return [x, y], reward
 
 

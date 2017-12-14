@@ -5,7 +5,26 @@ import numpy as np
 class Dyna:
 
     # @rand: an instance of np.random.RandomState for sampling
-    def __init__(self, rand, maze, planningSteps=5, expected=False, qLearning=False, alpha=0.1):
+    def __init__(self,
+                 rand,
+                 maze,
+                 gamma=0.95,
+                 planningSteps=5,
+                 expected=False,
+                 qLearning=False,
+                 alpha=0.1,
+                 plus=False,
+                 kappa=1e-4):
+        """
+
+        :param rand:
+        :param maze:
+        :param planningSteps:
+        :param expected:
+        :param qLearning:
+        :param alpha:
+        :param kappa:
+        """
         self.model = dict()
         self.rand = rand
         self.maze = maze
@@ -24,8 +43,7 @@ class Dyna:
             self.name = 'Dyna-Sarsa'
 
         # discount
-        self.gamma = 0.95
-        # self.gamma = 1.0
+        self.gamma = gamma
         # probability for exploration
         self.epsilon = 0.1
         # step size
@@ -41,11 +59,36 @@ class Dyna:
         # threshold for priority queue
         self.theta = 0
 
-    # feed the model with previous experience
+        # Dyna Plus algorithm
+        self.plus = plus  # flag for Dyna+ algorithm
+        if self.plus:
+            self.name += '_plus'
+        self.kappa = kappa  # Time weight
+        self.time = 0  # track the total time
+
+    #
     def feed(self, currentState, action, newState, reward):
-        if tuple(currentState) not in self.model.keys():
-            self.model[tuple(currentState)] = dict()
-        self.model[tuple(currentState)][action] = [list(newState), reward]
+        """"
+        feed the model with previous experience
+        """
+        if self.plus:
+            self.time += 1
+            if tuple(currentState) not in self.model.keys():
+                self.model[tuple(currentState)] = dict()
+                # Actions that had never been tried before from a state were allowed to be
+                # considered in the planning step
+                for action_ in self.maze.actions:
+                    if action_ != action:
+                        # Such actions would lead back to the same state with a reward of zero
+                        # Notice that the minimum time stamp is 1 omstead pf 0
+                        self.model[tuple(currentState)][action_] = [list(currentState), 0, 1]
+
+            self.model[tuple(currentState)][action] = [list(newState), reward, self.time]
+
+        else:
+            if tuple(currentState) not in self.model.keys():
+                self.model[tuple(currentState)] = dict()
+            self.model[tuple(currentState)][action] = [list(newState), reward]
 
     # randomly sample from previous experience
     def sample(self):
@@ -53,7 +96,13 @@ class Dyna:
         state = list(self.model)[stateIndex]
         actionIndex = self.rand.choice(range(0, len(self.model[state].keys())))
         action = list(self.model[state])[actionIndex]
-        newState, reward = self.model[state][action]
+        if self.plus:
+            newState, reward, time = self.model[state][action]
+            # adjust reward with elapsed time since last visit
+            reward += self.kappa * np.sqrt(self.time - time)
+        else:
+            newState, reward = self.model[state][action]
+
         return list(state), action, list(newState), reward
 
     # choose an action based on epsilon-greedy algorithm
