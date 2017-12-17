@@ -1,11 +1,11 @@
-import numpy as np
 
-
-# A wrapper class for a maze, containing all the information about the maze.
-# Basically it's initialized to DynaMaze by default, however it can be easily adapted
-# to other maze
 class Maze:
-    def __init__(self, width, height, start_state, goal_states, obstacles=None, return_to_start=True,
+    """
+    A wrapper class for a maze, containing all the information about the maze.
+    Basically it's initialized to DynaMaze by default, however it can be easily adapted
+    to other maze
+    """
+    def __init__(self, width, height, start_state, goal_states, obstacles=None, return_to_start=False,
                  reward_goal=0.0, reward_move=-1.0, reward_obstacle=-100.):
         self.WORLD_WIDTH = width
         self.WORLD_HEIGHT = height
@@ -35,15 +35,18 @@ class Maze:
 
         # max steps
         self.maxSteps = float('inf')
-        self.maxSteps = 10000
+        self.maxSteps = 100000
 
         # track the resolution for this maze
         self.resolution = 1
 
-    # extend a state to a higher resolution maze
-    # @state: state in lower resolution maze
-    # @factor: extension factor, one state will become factor^2 states after extension
     def extendState(self, state, factor):
+        """
+         Extend a state to a higher resolution maze
+        :param state: state in lower resolution maze
+        :param factor: extension factor, one state will become factor^2 states after extension
+        :return:
+        """
         newState = [state[0] * factor, state[1] * factor]
         newStates = []
         for i in range(0, factor):
@@ -51,18 +54,24 @@ class Maze:
                 newStates.append([newState[0] + i, newState[1] + j])
         return newStates
 
-    # extend a state into higher resolution
-    # one state in original maze will become @factor^2 states in @return new maze
     def extendMaze(self, factor):
-        newMaze = Maze()
-        newMaze.WORLD_WIDTH = self.WORLD_WIDTH * factor
-        newMaze.WORLD_HEIGHT = self.WORLD_HEIGHT * factor
-        newMaze.START_STATE = [self.START_STATE[0] * factor, self.START_STATE[1] * factor]
-        newMaze.GOAL_STATES = self.extendState(self.GOAL_STATES[0], factor)
-        newMaze.obstacles  = []
-        for state in self.obstacles :
-            newMaze.obstacles .extend(self.extendState(state, factor))
-        newMaze.stateActionValues = np.zeros((newMaze.WORLD_HEIGHT, newMaze.WORLD_WIDTH, len(newMaze.actions)))
+        """
+        Extend a state into higher resolution
+        :param factor: one state in original maze will become @factor^2 states in @return new maze
+        :return:
+        """
+        newMaze = Maze(width=self.WORLD_WIDTH * factor,
+                       height=self.WORLD_HEIGHT * factor,
+                       start_state=[self.START_STATE[0] * factor, self.START_STATE[1] * factor],
+                       goal_states=self.extendState(self.GOAL_STATES[0], factor),
+                       return_to_start=self.return_to_start,
+                       reward_goal=self.reward_goal,
+                       reward_move=self.reward_move,
+                       reward_obstacle=self.reward_obstacle
+                       )
+        newMaze.obstacles = []
+        for state in self.obstacles:
+            newMaze.obstacles.extend(self.extendState(state, factor))
         newMaze.resolution = factor
         return newMaze
 
@@ -91,7 +100,7 @@ class Maze:
         return [x, y], reward
 
 
-class GridWithWeights():
+class GridWithWeights:
     def __init__(self, width, height):
         self.weights = []
         self.width = width
@@ -121,7 +130,7 @@ def convert_maze_to_grid(maze):
     """
     # data from main article
     diagram = GridWithWeights(maze.WORLD_WIDTH, maze.WORLD_HEIGHT)
-    diagram.walls = [tuple(x) for x in maze.cliff]
+    diagram.walls = [tuple(x) for x in maze.obstacles]
     return diagram
 
 

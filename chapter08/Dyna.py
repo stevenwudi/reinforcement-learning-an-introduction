@@ -1,23 +1,58 @@
 import numpy as np
+import heapq
+import itertools
 
 
-# model for planning in Dyna-Q
+class PriorityQueue:
+    def __init__(self):
+        self.pq = []
+        self.entry_finder = {}
+        self.counter = itertools.count()
+        self.REMOVED = '<removed-task>'
+
+    def empty(self):
+        return not self.entry_finder
+
+    def removeItem(self, item):
+        entry = self.entry_finder.pop(item)
+        entry[-1] = self.REMOVED
+
+    def addItem(self, item, priority=0):
+        if item in self.entry_finder:
+            self.removeItem(item)
+        count = next(self.counter)
+        entry = [priority, count, item]
+        self.entry_finder[item] = entry
+        heapq.heappush(self.pq, entry)
+
+    def popTask(self):
+        while self.pq:
+            priority, count, item = heapq.heappop(self.pq)
+            if item is not self.REMOVED:
+                del self.entry_finder[item]
+                return item, priority
+        raise KeyError('pop from an empty priority queue')
+
+
 class Dyna:
-
-    # @rand: an instance of np.random.RandomState for sampling
+    """
+    # model for planning in Dyna
+    """
     def __init__(self,
                  rand,
                  maze,
                  gamma=0.95,
+                 epsilon=0.1,
                  planningSteps=5,
                  expected=False,
                  qLearning=False,
-                 alpha=0.1,
+                 alpha=0.5,
                  plus=False,
-                 kappa=1e-4):
+                 kappa=1e-4,
+                 priority=False,
+                 theta=1e-4):
         """
-
-        :param rand:
+        :param rand: @rand: an instance of np.random.RandomState for sampling
         :param maze:
         :param planningSteps:
         :param expected:
@@ -29,10 +64,8 @@ class Dyna:
         self.rand = rand
         self.maze = maze
         self.stateActionValues = np.zeros((maze.WORLD_HEIGHT, maze.WORLD_WIDTH, len(maze.actions)))
-
         # expected sarsa
         self.expected = expected
-
         # Q-learning
         self.qlearning = qLearning
         if self.qlearning:
@@ -41,19 +74,16 @@ class Dyna:
             self.name = 'DynaExpectedSarsa'
         else:
             self.name = 'Dyna-Sarsa'
-
         # discount
         self.gamma = gamma
         # probability for exploration
-        self.epsilon = 0.1
+        self.epsilon = epsilon
         # step size
         self.alpha = alpha
         # weight for elapsed time
         self.timeWeight = 0
         # n-step planning
         self.planningSteps = planningSteps
-        # average over several independent runs
-        self.runs = 10
         # algorithm names
         self.methods = ['Dyna-Q', 'Dyna-Q+']
         # threshold for priority queue
@@ -63,10 +93,29 @@ class Dyna:
         self.plus = plus  # flag for Dyna+ algorithm
         if self.plus:
             self.name += '_plus'
-        self.kappa = kappa  # Time weight
-        self.time = 0  # track the total time
+            self.kappa = kappa  # Time weight
+            self.time = 0  # track the total time
 
-    #
+        # Priority Sweeping
+        self.priority = priority
+        if self.priority:
+            self.theta = theta
+            self.name += '_PrioritizedSweeping'
+            self.priorityQueue = PriorityQueue()
+            # track predessors for every state
+            self.predecessors = dict()
+
+    def insert(self, priority, state, action):
+        """
+        add a state-action pair into the priority queue with priority
+        :param priority:
+        :param state:
+        :param action:
+        :return:
+        """
+        # note the priority queue is a minimum heap, so we use -priority
+        self.priorityQueue.addItem((tuple(state), action), -priority)
+
     def feed(self, currentState, action, newState, reward):
         """"
         feed the model with previous experience
@@ -90,38 +139,72 @@ class Dyna:
                 self.model[tuple(currentState)] = dict()
             self.model[tuple(currentState)][action] = [list(newState), reward]
 
-    # randomly sample from previous experience
+        # priority queue
+        if self.priority:
+            if tuple(newState) not in self.predecessors.keys():
+                self.predecessors[tuple(newState)] = set()
+            self.predecessors[tuple(newState)].add((tuple(currentState), action))
+
     def sample(self):
-        stateIndex = self.rand.choice(range(0, len(self.model.keys())))
-        state = list(self.model)[stateIndex]
-        actionIndex = self.rand.choice(range(0, len(self.model[state].keys())))
-        action = list(self.model[state])[actionIndex]
-        if self.plus:
-            newState, reward, time = self.model[state][action]
-            # adjust reward with elapsed time since last visit
-            reward += self.kappa * np.sqrt(self.time - time)
-        else:
+        """
+        sample from previous experience
+        :return:
+        """
+        if self.priority:
+            # get the  first item in the priority queue
+            (state, action), priority = self.priorityQueue.popTask()
             newState, reward = self.model[state][action]
+            return -priority, list(state), action, list(newState), reward
+        else:
+            # randomly sample from previous experience
+            stateIndex = self.rand.choice(range(0, len(self.model.keys())))
+            state = list(self.model)[stateIndex]
+            actionIndex = self.rand.choice(range(0, len(self.model[state].keys())))
+            action = list(self.model[state])[actionIndex]
+            if self.plus:
+                newState, reward, time = self.model[state][action]
+                # adjust reward with elapsed time since last visit
+                reward += self.kappa * np.sqrt(self.time - time)
+            else:
+                newState, reward = self.model[state][action]
 
-        return list(state), action, list(newState), reward
+            return list(state), action, list(newState), reward
 
-    # choose an action based on epsilon-greedy algorithm
+    def get_predecessor(self, state):
+        """
+        get predecessor for prioritize sweeping: for all, S', A' predicted to lead to S
+        :param state:
+        :return:
+        """
+        if tuple(state) not in self.predecessors.keys():
+            return []
+        predecessors = []
+        for statePre, actionPre in list(self.predecessors[tuple(state)]):
+            predecessors.append([list(statePre), actionPre, self.model[statePre][actionPre][1]])
+        return predecessors
+
     def chooseAction(self, state):
+        """
+        # choose an action based on epsilon-greedy algorithm
+        :param state:
+        :return:
+        """
         if np.random.binomial(1, self.epsilon) == 1:
             return np.random.choice(self.maze.actions)
         else:
             values = self.stateActionValues[state[0], state[1], :]
             return np.random.choice([action for action, value in enumerate(values) if value == np.max(values)])
 
-
-    # play for an episode for Dyna-Q algorithm
-    # @stateActionValues: state action pair values, will be updated
-    # @model: model instance for planning
-    # @planningSteps: steps for planning
-    # @maze: a maze instance containing all information about the environment
-    # @dynaParams: several params for the algorithm
     def play(self):
-
+        """
+        # play for an episode for Dyna-Q algorithm
+        # @stateActionValues: state action pair values, will be updated
+        # @model: model instance for planning
+        # @planningSteps: steps for planning
+        # @maze: a maze instance containing all information about the environment
+        # @dynaParams: several params for the algorithm
+        :return:
+        """
         currentState = self.maze.START_STATE
         steps = 0
         while currentState not in self.maze.GOAL_STATES:
@@ -133,38 +216,61 @@ class Dyna:
             # take action
             newState, reward = self.maze.takeAction(currentState, currentAction)
 
-            if self.qlearning:
-                # Q-Learning update
-                self.stateActionValues[currentState[0], currentState[1], currentAction] += \
-                    self.alpha * (reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) -
-                                        self.stateActionValues[currentState[0], currentState[1], currentAction])
+            if not self.priority:
+                if self.qlearning:
+                    # Q-Learning update
+                    self.stateActionValues[currentState[0], currentState[1], currentAction] += \
+                        self.alpha * (reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) -
+                                            self.stateActionValues[currentState[0], currentState[1], currentAction])
+                else:
+                    # sarsa or expected sarsa update
+                    if not self.expected:
+                        newAction = self.chooseAction(newState)
+                        valueTarget = self.stateActionValues[newState[0], newState[1], newAction]
+                    elif self.expected:
+                        # calculate the expected value of new state
+                        valueTarget = 0.0
+                        actionValues = self.stateActionValues[newState[0], newState[1], :]
+                        bestActions = np.argwhere(actionValues == np.max(actionValues))
+                        for action in self.maze.actions:
+                            if action in bestActions:
+                                valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) \
+                                               * self.stateActionValues[newState[0], newState[1], action]
+                            else:
+                                valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[newState[0], newState[1], action]
+                    # Sarsa update
+                    self.stateActionValues[currentState[0], currentState[1], currentAction] += \
+                        self.alpha * (reward + self.gamma * valueTarget - self.stateActionValues[currentState[0], currentState[1], currentAction])
             else:
-                # sarsa or expected sarsa update
-                if not self.expected:
-                    newAction = self.chooseAction(newState)
-                    valueTarget = self.stateActionValues[newState[0], newState[1], newAction]
-                elif self.expected:
-                    # calculate the expected value of new state
-                    valueTarget = 0.0
-                    actionValues = self.stateActionValues[newState[0], newState[1], :]
-                    bestActions = np.argwhere(actionValues == np.max(actionValues))
-                    for action in self.maze.actions:
-                        if action in bestActions:
-                            valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) \
-                                           * self.stateActionValues[newState[0], newState[1], action]
-                        else:
-                            valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[newState[0], newState[1], action]
-                # Sarsa update
-                self.stateActionValues[currentState[0], currentState[1], currentAction] += \
-                    self.alpha * (reward + self.gamma * valueTarget - self.stateActionValues[currentState[0], currentState[1], currentAction])
+                # get the priority for current state action pair
+                priority = np.abs(reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) -
+                                  self.stateActionValues[currentState[0], currentState[1], currentAction])
+                if priority > self.theta:
+                    self.insert(priority, currentState, currentAction)
+
             # feed the model with experience
             self.feed(currentState, currentAction, newState, reward)
+
             if not self.qlearning:
-                currentAction = newAction
+                if not self.expected:
+                    currentAction = newAction
+                else:
+                    currentAction = np.random.choice(np.array(bestActions).flatten())
             currentState = newState
+
+            # start planning
             # sample experience from the model
             for t in range(0, self.planningSteps):
-                stateSample, actionSample, newStateSample, rewardSample = self.sample()
+                if self.priority:
+                    if self.priorityQueue.empty():
+                        # although keep planning until the priority queue becomes empty will converge much faster
+                        break
+                    else:
+                        # get a sample with highest priority from the model
+                        priority, stateSample, actionSample, newStateSample, rewardSample = self.sample()
+                else:
+                    stateSample, actionSample, newStateSample, rewardSample = self.sample()
+
                 if self.qlearning:
                     self.stateActionValues[stateSample[0], stateSample[1], actionSample] += \
                         self.alpha * (rewardSample + self.gamma * np.max(
@@ -193,6 +299,17 @@ class Dyna:
                         self.alpha * (rewardSample + self.gamma * valueTarget -
                                       self.stateActionValues[stateSample[0], stateSample[1], actionSample])
 
+                if self.priority:
+                    # deal with all the predecessors of the sample states
+                    # print(stateSample, end=': ')
+                    # print('get_predecessor--> len(%d)' % len(self.get_predecessor(stateSample)))
+                    for statePre, actionPre, rewardPre in self.get_predecessor(stateSample):
+                        priority = np.abs(rewardPre + self.gamma * np.max(self.stateActionValues[stateSample[0], stateSample[1], :]) -
+                                                                          self.stateActionValues[statePre[0], statePre[1], actionPre])
+                        if priority > self.theta:
+                            self.insert(priority, statePre, actionPre)
+
+                steps += 1
             # check whether it has exceeded the step limit
             if steps > self.maze.maxSteps:
                 print(currentState)
@@ -201,11 +318,12 @@ class Dyna:
         return steps
 
     def walk_final_grid(self):
-
+        """
+        A helper function to walk the whole grid world
+        :return:
+        """
         came_from = {}
         cost_so_far = {}
-        # came_from[tuple([maze.START_STATE[1], maze.START_STATE[0]])] = None
-        # cost_so_far[tuple([maze.START_STATE[1], maze.START_STATE[0]])] = 0
         came_from[tuple(self.maze.START_STATE)] = None
         cost_so_far[tuple(self.maze.START_STATE)] = 0
         # we use the maximum here directly
@@ -218,7 +336,7 @@ class Dyna:
             steps += 1
 
             # get action
-            action = self.chooseAction(currentState)
+            action = np.argmax(self.stateActionValues[currentState[0], currentState[1], :])
             # take action
             newState, reward = self.maze.takeAction(currentState, action)
             cost_so_far[tuple(newState)] = reward
@@ -231,3 +349,24 @@ class Dyna:
                 break
 
         return came_from, cost_so_far
+
+    def checkPath(self):
+        """
+        This function only apply to Sutton book Chapter 8.
+        Check whether state-action values are already optimal
+        :return:
+        """
+        # get the length of optimal path
+        # 14 is the length of optimal path of the original maze
+        # 1.2 means it's a relaxed optifmal path
+        maxSteps = 14 * self.maze.resolution * 1.2
+        currentState = self.maze.START_STATE
+        steps = 0
+        while currentState not in self.maze.GOAL_STATES:
+            bestAction = np.argmax(self.stateActionValues[currentState[0], currentState[1], :])
+            currentState, _ = self.maze.takeAction(currentState, bestAction)
+            steps += 1
+            if steps > maxSteps:
+                return False
+
+        return True

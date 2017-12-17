@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import itertools
 import heapq
 
+
 class PriorityQueue:
     def __init__(self):
         self.pq = []
@@ -472,6 +473,9 @@ def prioritizedSweeping(stateActionValues, model, maze, dynaParams):
                     stateActionValues[sampleState[0], sampleState[1], sampleAction]
             stateActionValues[sampleState[0], sampleState[1], sampleAction] += dynaParams.alpha * delta
 
+            print(sampleState, end=': ')
+            print('get_predecessor--> len(%d)' % len(model.predecessor(sampleState)))
+
             # deal with all the predecessors of the sample state
             for statePre, actionPre, rewardPre in model.predecessor(sampleState):
                 priority = np.abs(rewardPre + dynaParams.gamma * np.max(stateActionValues[sampleState[0], sampleState[1], :]) -
@@ -742,6 +746,7 @@ def figure8_7():
     params = [paramsPrioritized, paramsDyna]
 
     # set up models for planning
+    rand = np.random.RandomState(0)
     models = [PriorityModel, TrivialModel]
     methodNames = ['Prioritized Sweeping', 'Dyna-Q']
 
@@ -750,8 +755,9 @@ def figure8_7():
     numOfMazes = 5
 
     # build all the mazes
-    mazes = [originalMaze.extendMaze(i) for i in range(1, numOfMazes + 1)]
+    mazes = [originalMaze.extendMaze(i) for i in range(3, numOfMazes + 1)]
     methods = [prioritizedSweeping, dynaQ]
+    methods = [prioritizedSweeping]
 
     # track the # of backups
     backups = np.zeros((2, numOfMazes))
@@ -770,7 +776,7 @@ def figure8_7():
                 steps = []
 
                 # generate the model
-                model = models[i]()
+                model = models[i](rand)
 
                 # play for an episode
                 while True:
@@ -785,6 +791,14 @@ def figure8_7():
 
                 # update the total steps / backups for this maze
                 backups[i][mazeIndex] += np.sum(steps)
+
+                came_from, cost_so_far = walk_final_grid(currentStateActionValues, model, maze, params[i])
+                diagram = convert_maze_to_grid(maze)
+                s = set()
+                for item in maze.GOAL_STATES:
+                    s.add(tuple(item))
+                draw_grid(diagram, width=3, point_to=came_from,
+                          start=tuple(maze.START_STATE), goal=list(s.intersection(set(came_from.keys())))[0])
 
     # Dyna-Q performs several backups per step
     backups[1, :] *= paramsDyna.planningSteps
@@ -802,6 +816,6 @@ def figure8_7():
 
 #figure8_3()
 #figure8_5()
-figure8_6()
-#figure8_7()
+#figure8_6()
+figure8_7()
 plt.show()
