@@ -1,3 +1,5 @@
+import numpy as np
+
 
 class Maze:
     """
@@ -5,15 +7,19 @@ class Maze:
     Basically it's initialized to DynaMaze by default, however it can be easily adapted
     to other maze
     """
-    def __init__(self, width, height, start_state, goal_states, obstacles=None, return_to_start=False,
-                 reward_goal=0.0, reward_move=-1.0, reward_obstacle=-100.):
+    def __init__(self, width, height, start_state, goal_states, obstacles=[], return_to_start=False,
+                 reward_goal=0.0, reward_move=-1.0, reward_obstacle=-100.,
+                 stochastic_wind=[], stochastic_wind_direction=None):
         self.WORLD_WIDTH = width
         self.WORLD_HEIGHT = height
+        self.stochastic_wind = stochastic_wind
+        self.stochastic_wind_direction = stochastic_wind_direction
         # all possible actions
         self.ACTION_UP = 0
         self.ACTION_DOWN = 1
         self.ACTION_LEFT = 2
         self.ACTION_RIGHT = 3
+        self.ACTION_STAY = -1
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state
@@ -75,10 +81,32 @@ class Maze:
         newMaze.resolution = factor
         return newMaze
 
-    # take @action in @state
-    # @return: [new state, reward]
-    def takeAction(self, state, action):
+    def wind_blow(self, state):
         x, y = state
+        action_times = self.stochastic_wind[x, y]
+        # for a in range(action_times):
+        #     action = self.stochastic_wind_direction
+        #     [x, y], _ = self.takeAction(state, action, [])
+        #     state = [x, y]
+
+        ## The following is for Book exe. 6.10
+        if action_times:
+            action = np.random.choice([0, -1, 1])
+            [x, y], _ = self.takeAction(state, action, [])
+        return x, y
+
+    def takeAction(self, state, action, stochastic_wind=[]):
+        """
+        :param state:
+        :param action:
+        :param stochastic_wind:
+        :return:
+        """
+        x, y = state
+        if len(stochastic_wind):
+            # this funcionality is mainly for Book Fig.6.3...
+            x, y = self.wind_blow(state)
+
         if action == self.ACTION_UP:
             x = max(x - 1, 0)
         elif action == self.ACTION_DOWN:
@@ -87,6 +115,9 @@ class Maze:
             y = max(y - 1, 0)
         elif action == self.ACTION_RIGHT:
             y = min(y + 1, self.WORLD_WIDTH - 1)
+        # elif action == self.ACTION_STAY:
+        #     x, y = x, y
+
         if [x, y] in self.obstacles:
             if self.return_to_start:
                 x, y = self.START_STATE

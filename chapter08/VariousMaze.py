@@ -306,6 +306,7 @@ def dynaQ(stateActionValues, model, maze, dynaParams):
 
         # feed the model with experience
         model.feed(currentState, action, newState, reward)
+        currentState = newState
 
         # sample experience from the model
         for t in range(0, dynaParams.planningSteps):
@@ -314,7 +315,6 @@ def dynaQ(stateActionValues, model, maze, dynaParams):
                 dynaParams.alpha * (rewardSample + dynaParams.gamma * np.max(stateActionValues[newStateSample[0], newStateSample[1], :]) -
                 stateActionValues[stateSample[0], stateSample[1], actionSample])
 
-        currentState = newState
 
         # check whether it has exceeded the step limit
         if steps > maze.maxSteps:
@@ -814,8 +814,8 @@ def figure8_7():
     plt.yscale('log')
     plt.legend()
 
-#figure8_3()
+figure8_3()
 #figure8_5()
 #figure8_6()
-figure8_7()
+#figure8_7()
 plt.show()

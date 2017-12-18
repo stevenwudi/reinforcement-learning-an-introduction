@@ -90,9 +90,11 @@ def oneEpisode():
 episodeLimit = 500
 ep = 0
 episodes = []
+episodes.append(0)
 while ep < episodeLimit:
     time = oneEpisode()
     episodes.extend([ep] * time)
+    episodes_last = episodes[-1]
     ep += 1
 
 plt.figure()

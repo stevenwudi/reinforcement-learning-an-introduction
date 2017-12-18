@@ -10,84 +10,93 @@ from chapter08.Astar import a_star_search
 
 def main():
     # set up an instance for DynaMaze
-    dynaMaze = Maze(width=9,
-                    height=6,
+    dynaMaze = Maze(height=6,
+                    width=9,
                     start_state=[2, 0],
                     goal_states=[[0, 8]],
-                    return_to_start=True)
+                    reward_goal=1.0,
+                    reward_move=0.0,
+                    reward_obstacle=0.0,
+                    return_to_start=False)
     dynaMaze.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
-    runs = 10
+    runs = 2
     episodes = 50
-    planningSteps = [0, 5, 50]
-    steps = np.zeros((len(planningSteps), episodes))
-
+    planningSteps = [5, 50]
+    steps = np.zeros((len(planningSteps), 3, episodes))
+    # model hyper-parameters
+    alpha = 0.1
+    gamma = 0.95
+    theta = 1e-4
     # this random seed is for sampling from model
     # we do need this separate random seed to make sure the first episodes for all planning steps are the same
     rand = np.random.RandomState(0)
+    # set same random seed for each planning step
+    np.random.seed(0)
 
     # ################### Now we do Sarsa #################################################
     for run in range(0, runs):
-        for index, planningStep in zip(range(0, len(planningSteps)), planningSteps):
-            # set same random seed for each planning step
-            np.random.seed(run)
+        for index, planningStep in enumerate(planningSteps):
+
             # generate an instance of Dyna-Q model
-            model_Dyna_Sarsa = Dyna(rand=rand, maze=dynaMaze, planningSteps=planningStep, qLearning=False, expected=False, alpha=0.1)
-            for ep in range(0, episodes):
-                print('run:', run, 'planning step:', planningStep, 'episode:', ep)
-                steps[index, ep] += model_Dyna_Sarsa.play()
-                print(steps[index, ep])
+            model_Dyna_Sarsa = Dyna(rand=rand,
+                                    maze=dynaMaze,
+                                    planningSteps=planningStep,
+                                    qLearning=False,
+                                    expected=False,
+                                    alpha=alpha)
+
+            model_Dyna_Q = Dyna(rand=rand,
+                               maze=dynaMaze,
+                               planningSteps=planningStep,
+                               gamma=gamma,
+                               alpha=alpha,
+                               qLearning=True)
+
+            model_Dyna_Sarsa_Expected = Dyna(rand=rand,
+                                             maze=dynaMaze,
+                                             gamma=gamma,
+                                             planningSteps=planningStep,
+                                             qLearning=False,
+                                             expected=True,
+                                             plus=False,
+                                             alpha=alpha)
+
+            model_Dyna_PS = Dyna(rand=rand,
+                                 maze=dynaMaze,
+                                 gamma=gamma,
+                                 planningSteps=planningStep,
+                                 qLearning=True,
+                                 expected=False,
+                                 alpha=alpha,
+                                 priority=True,
+                                 theta=theta)
+
+            if planningStep == 0:
+                models = [model_Dyna_Sarsa, model_Dyna_Sarsa_Expected, model_Dyna_Q]
+            else:
+                models = [model_Dyna_Sarsa, model_Dyna_Sarsa_Expected, model_Dyna_Q, model_Dyna_PS]
+            models = [model_Dyna_Q, model_Dyna_Sarsa_Expected, model_Dyna_PS]
+
+            for m, model in enumerate(models):
+                for ep in range(0, episodes):
+                    #print('run:', run, 'planning step:', planningStep, 'episode:', ep, 'model: ', model.name)
+                    print('planning step:', planningStep, 'episode:', ep, 'model: ', model.name)
+                    steps[index, m, ep] += model.play(environ_step=True)
 
     # averaging over runs
-    steps /= runs
+    linestyles = ['-', '--', '-.', ':']
 
     plt.figure(0)
     for i in range(0, len(planningSteps)):
-        plt.plot(range(0, episodes), steps[i, :], label=str(planningSteps[i]) + ' planning steps')
-    print(steps[i, :])
+        for m, model in enumerate(models):
+            plt.plot(range(0, episodes), steps[i, m, :],
+                     label=model.name + "_" + str(planningSteps[i]), linestyle=linestyles[m])
+
     plt.xlabel('episodes')
     plt.ylabel('steps per episode')
-    plt.title(model_Dyna_Sarsa.name)
     plt.legend()
-
-    came_from, cost_so_far = model_Dyna_Sarsa.walk_final_grid()
-    diagram = convert_maze_to_grid(dynaMaze)
-    draw_grid(diagram, width=3, point_to=came_from,
-              start=tuple(dynaMaze.START_STATE), goal=tuple(dynaMaze.GOAL_STATES[0]))
-
+    plt.show()
     print('Finish')
-    ################################# Now DynaQ ##############################
-    for run in range(0, runs):
-        for index, planningStep in zip(range(0, len(planningSteps)), planningSteps):
-            # set same random seed for each planning step
-            np.random.seed(run)
-            # generate an instance of Dyna-Q model
-            model_DynaQ = Dyna(rand=rand, maze=dynaMaze, planningSteps=planningStep, qLearning=True)
-            for ep in range(0, episodes):
-                print('run:', run, 'planning step:', planningStep, 'episode:', ep)
-                steps[index, ep] += model_DynaQ.play()
-                print(steps[index, ep])
-
-    # averaging over runs
-    steps /= runs
-
-    plt.figure(0)
-    for i in range(0, len(planningSteps)):
-        plt.plot(range(0, episodes), steps[i, :], label=str(planningSteps[i]) + ' planning steps')
-    print(steps[i, :])
-    plt.xlabel('episodes')
-    plt.ylabel('steps per episode')
-    plt.title(model_DynaQ.name)
-    plt.legend()
-
-    came_from, cost_so_far = model_DynaQ.walk_final_grid()
-    diagram = convert_maze_to_grid(dynaMaze)
-    draw_grid(diagram, width=3, point_to=came_from,
-              start=tuple(dynaMaze.START_STATE), goal=tuple(dynaMaze.GOAL_STATES[0]))
-
-    print('Finish')
-
-    #came_from, cost_so_far = a_star_search(diagram, tuple(dynaMaze.START_STATE), tuple(dynaMaze.GOAL_STATES[0]))
-    #draw_grid_a_star(diagram, width=3, point_to=came_from, start=tuple(dynaMaze.START_STATE), goal=tuple(dynaMaze.GOAL_STATES[0]))
 
 
 def figure8_5():
@@ -453,4 +462,4 @@ def figure8_7_multiprocessing():
 
 
 if __name__ == "__main__":
-    figure8_7_multiprocessing()
+    main()

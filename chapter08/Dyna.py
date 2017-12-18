@@ -84,6 +84,7 @@ class Dyna:
         self.timeWeight = 0
         # n-step planning
         self.planningSteps = planningSteps
+
         # algorithm names
         self.methods = ['Dyna-Q', 'Dyna-Q+']
         # threshold for priority queue
@@ -104,6 +105,8 @@ class Dyna:
             self.priorityQueue = PriorityQueue()
             # track predessors for every state
             self.predecessors = dict()
+
+        self.full_name = self.name + '_planning:_%d' % planningSteps
 
     def insert(self, priority, state, action):
         """
@@ -195,7 +198,7 @@ class Dyna:
             values = self.stateActionValues[state[0], state[1], :]
             return np.random.choice([action for action, value in enumerate(values) if value == np.max(values)])
 
-    def play(self):
+    def play(self, environ_step=False):
         """
         # play for an episode for Dyna-Q algorithm
         # @stateActionValues: state action pair values, will be updated
@@ -203,18 +206,19 @@ class Dyna:
         # @planningSteps: steps for planning
         # @maze: a maze instance containing all information about the environment
         # @dynaParams: several params for the algorithm
-        :return:
+        :return:  if with environ_step as True, we will only return the actually interaction with the environment
         """
         currentState = self.maze.START_STATE
         steps = 0
         while currentState not in self.maze.GOAL_STATES:
+            ######################## Interaction with the environment ###############################
             # track the steps
             steps += 1
             # get action
             if steps == 1 or self.qlearning:
                 currentAction = self.chooseAction(currentState)
             # take action
-            newState, reward = self.maze.takeAction(currentState, currentAction)
+            newState, reward = self.maze.takeAction(currentState, currentAction, self.maze.stochastic_wind)
 
             if not self.priority:
                 if self.qlearning:
@@ -248,7 +252,7 @@ class Dyna:
                 if priority > self.theta:
                     self.insert(priority, currentState, currentAction)
 
-            # feed the model with experience
+            ######################## feed the model with experience ###############################
             self.feed(currentState, currentAction, newState, reward)
 
             if not self.qlearning:
@@ -258,8 +262,7 @@ class Dyna:
                     currentAction = np.random.choice(np.array(bestActions).flatten())
             currentState = newState
 
-            # start planning
-            # sample experience from the model
+            ######################## Planning from the model ###############################
             for t in range(0, self.planningSteps):
                 if self.priority:
                     if self.priorityQueue.empty():
@@ -269,6 +272,7 @@ class Dyna:
                         # get a sample with highest priority from the model
                         priority, stateSample, actionSample, newStateSample, rewardSample = self.sample()
                 else:
+                    # sample experience from the model
                     stateSample, actionSample, newStateSample, rewardSample = self.sample()
 
                 if self.qlearning:
@@ -309,7 +313,8 @@ class Dyna:
                         if priority > self.theta:
                             self.insert(priority, statePre, actionPre)
 
-                steps += 1
+                if not environ_step:
+                    steps += 1
             # check whether it has exceeded the step limit
             if steps > self.maze.maxSteps:
                 print(currentState)
