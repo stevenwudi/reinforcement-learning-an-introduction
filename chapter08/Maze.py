@@ -19,7 +19,7 @@ class Maze:
         self.ACTION_DOWN = 1
         self.ACTION_LEFT = 2
         self.ACTION_RIGHT = 3
-        self.ACTION_STAY = -1
+        #self.ACTION_STAY = -1
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state

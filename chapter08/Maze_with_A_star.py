@@ -410,17 +410,39 @@ def figure8_7_multiprocessing():
 
     start_time = timer()
     pool = Pool(processes=5)
-    backups = np.zeros((runs, 2, numOfMazes))
+    backups = np.zeros((runs, 4, numOfMazes))
 
     for mazeIndex, maze in enumerate(mazes):
         maze.GOAL_STATES = [maze.GOAL_STATES[0]]
-        model_Dyna_PS = Dyna(rand=rand,
+        model_Dyna_PS_Q = Dyna(rand=rand,
                              maze=maze,
                              epsilon=epsilon,
                              gamma=gamma,
                              planningSteps=planningSteps,
                              qLearning=True,
                              expected=False,
+                             alpha=alpha,
+                             priority=True,
+                             theta=theta)
+
+        model_Dyna_PS_Sarsa = Dyna(rand=rand,
+                             maze=maze,
+                             epsilon=epsilon,
+                             gamma=gamma,
+                             planningSteps=planningSteps,
+                             qLearning=False,
+                             expected=False,
+                             alpha=alpha,
+                             priority=True,
+                             theta=theta)
+
+        model_Dyna_PS_Sarsa_expected = Dyna(rand=rand,
+                             maze=maze,
+                             epsilon=epsilon,
+                             gamma=gamma,
+                             planningSteps=planningSteps,
+                             qLearning=False,
+                             expected=True,
                              alpha=alpha,
                              priority=True,
                              theta=theta)
@@ -435,7 +457,78 @@ def figure8_7_multiprocessing():
                           plus=False,
                           alpha=alpha)
 
-        models = [model_Dyna_PS, model_Dyna]
+        models = [model_Dyna_PS_Q, model_Dyna_PS_Sarsa, model_Dyna_PS_Sarsa_expected, model_Dyna]
+        for m, model in enumerate(models):
+            for run in range(0, runs):
+                print('run:', run, model.name, 'maze size:', maze.WORLD_HEIGHT * maze.WORLD_WIDTH)
+                result = pool.apply_async(model_play_worker, [model])
+                backups[run][m][mazeIndex] = np.sum(result.get())
+
+    pool.close()
+    print('Finish, using %.2f sec!' % (timer() - start_time))
+
+    # Dyna-Q performs several backups per step
+    backups = np.sum(backups, axis=0)
+    # average over independent runs
+    backups /= float(runs)
+
+    plt.figure(3)
+    for i in range(0, len(models)):
+        plt.plot(np.arange(resize_idx, numOfMazes + 1), backups[i, :], label=models[i].name)
+    plt.xlabel('maze resolution factor')
+    plt.ylabel('backups until optimal solution')
+    plt.yscale('log')
+    plt.legend()
+    print('Finish')
+    plt.show()
+
+
+def figure8_7_A_star():
+    # get the original 6*9 maze
+    original_maze = Maze(width=9,
+                        height=6,
+                        start_state=[2, 0],
+                        goal_states=[[0, 8]],
+                        return_to_start=False,
+                        reward_goal=1.0,
+                        reward_move=0.0,
+                        reward_obstacle=0.0
+                        )
+    original_maze.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
+
+    # say 1st maze has w * h states, then k-th maze has w * h * k * k states
+    numOfMazes = 1
+    # build all the mazes
+    resize_idx = 5
+    mazes = [original_maze.extendMaze(i) for i in range(resize_idx, numOfMazes + 1)]
+    # Dyna model hyper
+    rand = np.random.RandomState(0)
+    planningSteps = 5
+    alpha = 0.5
+    gamma = 0.95
+    theta = 1e-4
+    epsilon = 0.1
+    # track the # of backups
+
+    start_time = timer()
+    pool = Pool(processes=5)
+    backups = np.zeros((2, numOfMazes))
+
+    for mazeIndex, maze in enumerate(mazes):
+        maze.GOAL_STATES = [maze.GOAL_STATES[0]]
+        model_Dyna_PS_Q = Dyna(rand=rand,
+                             maze=maze,
+                             epsilon=epsilon,
+                             gamma=gamma,
+                             planningSteps=planningSteps,
+                             qLearning=True,
+                             expected=False,
+                             alpha=alpha,
+                             priority=True,
+                             theta=theta)
+
+
+        models = [model_Dyna_PS_Q]
         for m, model in enumerate(models):
             for run in range(0, runs):
                 print('run:', run, model.name, 'maze size:', maze.WORLD_HEIGHT * maze.WORLD_WIDTH)
@@ -462,4 +555,4 @@ def figure8_7_multiprocessing():
 
 
 if __name__ == "__main__":
-    main()
+    figure8_7_multiprocessing()

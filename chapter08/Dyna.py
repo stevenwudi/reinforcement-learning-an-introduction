@@ -85,8 +85,6 @@ class Dyna:
         # n-step planning
         self.planningSteps = planningSteps
 
-        # algorithm names
-        self.methods = ['Dyna-Q', 'Dyna-Q+']
         # threshold for priority queue
         self.theta = 0
 
@@ -97,7 +95,6 @@ class Dyna:
             self.kappa = kappa  # Time weight
             self.time = 0  # track the total time
 
-        # Priority Sweeping
         self.priority = priority
         if self.priority:
             self.theta = theta
@@ -220,35 +217,35 @@ class Dyna:
             # take action
             newState, reward = self.maze.takeAction(currentState, currentAction, self.maze.stochastic_wind)
 
-            if not self.priority:
-                if self.qlearning:
-                    # Q-Learning update
-                    self.stateActionValues[currentState[0], currentState[1], currentAction] += \
-                        self.alpha * (reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) -
-                                            self.stateActionValues[currentState[0], currentState[1], currentAction])
-                else:
-                    # sarsa or expected sarsa update
-                    if not self.expected:
-                        newAction = self.chooseAction(newState)
-                        valueTarget = self.stateActionValues[newState[0], newState[1], newAction]
-                    elif self.expected:
-                        # calculate the expected value of new state
-                        valueTarget = 0.0
-                        actionValues = self.stateActionValues[newState[0], newState[1], :]
-                        bestActions = np.argwhere(actionValues == np.max(actionValues))
-                        for action in self.maze.actions:
-                            if action in bestActions:
-                                valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) \
-                                               * self.stateActionValues[newState[0], newState[1], action]
-                            else:
-                                valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[newState[0], newState[1], action]
-                    # Sarsa update
-                    self.stateActionValues[currentState[0], currentState[1], currentAction] += \
-                        self.alpha * (reward + self.gamma * valueTarget - self.stateActionValues[currentState[0], currentState[1], currentAction])
+            if self.qlearning:
+                # Q-Learning update
+                action_value_delta = reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) - \
+                                     self.stateActionValues[currentState[0], currentState[1], currentAction]
             else:
-                # get the priority for current state action pair
-                priority = np.abs(reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) -
-                                  self.stateActionValues[currentState[0], currentState[1], currentAction])
+                # sarsa or expected sarsa update
+                if not self.expected:
+                    newAction = self.chooseAction(newState)
+                    valueTarget = self.stateActionValues[newState[0], newState[1], newAction]
+                elif self.expected:
+                    # calculate the expected value of new state
+                    valueTarget = 0.0
+                    actionValues = self.stateActionValues[newState[0], newState[1], :]
+                    bestActions = np.argwhere(actionValues == np.max(actionValues))
+                    for action in self.maze.actions:
+                        if action in bestActions:
+                            valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) * \
+                                           self.stateActionValues[newState[0], newState[1], action]
+                        else:
+                            valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[
+                                newState[0], newState[1], action]
+                # Sarsa update
+                action_value_delta = reward + self.gamma * valueTarget - self.stateActionValues[currentState[0], currentState[1], currentAction]
+
+            if not self.priority:
+                self.stateActionValues[currentState[0], currentState[1], currentAction] += self.alpha * action_value_delta
+            else:
+                priority = np.abs(action_value_delta)
+
                 if priority > self.theta:
                     self.insert(priority, currentState, currentAction)
 
@@ -276,10 +273,8 @@ class Dyna:
                     stateSample, actionSample, newStateSample, rewardSample = self.sample()
 
                 if self.qlearning:
-                    self.stateActionValues[stateSample[0], stateSample[1], actionSample] += \
-                        self.alpha * (rewardSample + self.gamma * np.max(
-                            self.stateActionValues[newStateSample[0], newStateSample[1], :]) -
-                                      self.stateActionValues[stateSample[0], stateSample[1], actionSample])
+                    action_value_delta = rewardSample + self.gamma * np.max(self.stateActionValues[newStateSample[0], newStateSample[1], :]) - \
+                                         self.stateActionValues[stateSample[0], stateSample[1], actionSample]
                 else:
                     # sarsa or expected sarsa update
                     if not self.expected:
@@ -292,24 +287,45 @@ class Dyna:
                         bestActions = np.argwhere(actionValues == np.max(actionValues))
                         for action in self.maze.actions:
                             if action in bestActions:
-                                valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(
-                                    self.maze.actions)) \
-                                               * self.stateActionValues[newStateSample[0], newStateSample[1], action]
+                                valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) * \
+                                               self.stateActionValues[newStateSample[0], newStateSample[1], action]
                             else:
                                 valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[
                                     newStateSample[0], newStateSample[1], action]
                                 # Sarsa update
-                    self.stateActionValues[stateSample[0], stateSample[1], actionSample] += \
-                        self.alpha * (rewardSample + self.gamma * valueTarget -
-                                      self.stateActionValues[stateSample[0], stateSample[1], actionSample])
+                    action_value_delta = rewardSample + self.gamma * valueTarget - self.stateActionValues[stateSample[0], stateSample[1], actionSample]
+                self.stateActionValues[stateSample[0], stateSample[1], actionSample] += self.alpha * action_value_delta
 
                 if self.priority:
                     # deal with all the predecessors of the sample states
                     # print(stateSample, end=': ')
                     # print('get_predecessor--> len(%d)' % len(self.get_predecessor(stateSample)))
                     for statePre, actionPre, rewardPre in self.get_predecessor(stateSample):
-                        priority = np.abs(rewardPre + self.gamma * np.max(self.stateActionValues[stateSample[0], stateSample[1], :]) -
-                                                                          self.stateActionValues[statePre[0], statePre[1], actionPre])
+                        if self.qlearning:
+                            action_value_delta = rewardPre + self.gamma * np.max(
+                                self.stateActionValues[stateSample[0], stateSample[1], :]) - \
+                                                 self.stateActionValues[statePre[0], statePre[1], actionPre]
+                        else:
+                            # sarsa or expected sarsa update
+                            if not self.expected:
+                                newAction_sample = self.chooseAction(stateSample)
+                                valueTarget = self.stateActionValues[stateSample[0], stateSample[1], newAction_sample]
+                            elif self.expected:
+                                # calculate the expected value of new state
+                                valueTarget = 0.0
+                                actionValues = self.stateActionValues[stateSample[0], stateSample[1], :]
+                                bestActions = np.argwhere(actionValues == np.max(actionValues))
+                                for action in self.maze.actions:
+                                    if action in bestActions:
+                                        valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) * \
+                                                       self.stateActionValues[stateSample[0], stateSample[1], action]
+                                    else:
+                                        valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[
+                                            stateSample[0], stateSample[1], action]
+                                        # Sarsa update
+                            action_value_delta = rewardPre + self.gamma * valueTarget - self.stateActionValues[statePre[0], statePre[1], actionPre]
+                        priority = np.abs(action_value_delta)
+
                         if priority > self.theta:
                             self.insert(priority, statePre, actionPre)
 

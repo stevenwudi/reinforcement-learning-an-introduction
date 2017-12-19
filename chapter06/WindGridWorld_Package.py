@@ -9,10 +9,10 @@ def main():
     # hyper-parameters for Dyna models
     rand = np.random.RandomState(0)
     epsilon = 0.1
-    planningSteps = [0, 5, 10]
+    planningSteps = [0, 5, 20]
     #planningSteps = [0, 5]
     linestyles = ['-', '--', '-.', ':']
-    gamma = 0.95
+    gamma = 1
     alpha = 0.5
     theta = 1e-4
 
@@ -75,7 +75,7 @@ def main():
         if ps == 0:
             models = [model_Dyna_Sarsa, model_Dyna_Sarsa_Expected, model_Dyna_Q]
         else:
-            models = [model_Dyna_Sarsa, model_Dyna_Sarsa_Expected, model_Dyna_Q]
+            models = [model_Dyna_PS, model_Dyna_Sarsa, model_Dyna_Sarsa_Expected, model_Dyna_Q]
 
         for m, model in enumerate(models):
             # track steps / backups for each episode
