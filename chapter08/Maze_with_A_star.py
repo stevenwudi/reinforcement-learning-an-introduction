@@ -1,11 +1,12 @@
 import numpy as np
-import multiprocessing
 from multiprocessing import Pool
 import matplotlib.pyplot as plt
-from chapter08.Maze import Maze, convert_maze_to_grid, draw_grid
+from chapter08.Maze import Maze, Maze_3D
 from chapter08.Dyna import Dyna
+from chapter08.Dyna_3D import Dyna_3D
 from timeit import default_timer as timer
-from chapter08.Astar import a_star_search
+from chapter08.Astar import a_star_search_3D, convert_maze_to_grid, draw_grid, \
+    walk_final_grid_go_to, convert_3Dmaze_to_grid, draw_grid_3d
 
 
 def main():
@@ -157,7 +158,7 @@ def figure8_5():
             lastSteps = steps
             while steps < maxSteps:
                 # play for an episode
-                steps += model.play()
+                steps += model.play(environ_step=True)
                 # update cumulateive rewards
                 steps_ = min(steps, maxSteps-1)
                 rewards_[i, lastSteps:steps_] = rewards_[i, lastSteps]
@@ -193,7 +194,7 @@ def figure8_6():
     # new obstalces will block the optimal path
     blockingMaze.newObstacles = [[3, i] for i in range(1, 8)]
     # step limit
-    maxSteps = 6000
+    maxSteps = 8000
     # obstacles will change after 1000 steps
     # the exact step for changing will be different
     # However given that 1000 steps is long enough for both algorithms to converge,
@@ -204,18 +205,27 @@ def figure8_6():
     rand = np.random.RandomState(0)
     # generate an instance of Dyna-Q model
     # track the cumulative rewards
-    rewards = np.zeros((2, maxSteps))
 
-    runs = 5
+    runs = 3
     planningSteps = 5
-    alpha = 0.7
+    alpha = 0.5
+    gamma = 0.95
+    kappa = 1e-3
+    theta = 1e-4
+    ucb = 1e-2
+    model_num = 4
+    # track cumulative reward in current run
+    rewards = np.zeros((model_num, maxSteps))
+
     for run in range(0, runs):
         # set up models
+        rewards_ = np.zeros(shape=(model_num, maxSteps))
         model_Dyna = Dyna(rand=rand,
                           maze=blockingMaze,
                           planningSteps=planningSteps,
                           qLearning=True,
                           expected=False,
+                          gamma=gamma,
                           alpha=alpha)
 
         model_Dyna_plus = Dyna(rand=rand,
@@ -225,10 +235,31 @@ def figure8_6():
                                expected=False,
                                alpha=alpha,
                                plus=True,
-                               kappa=1e-3)
-        models = [model_Dyna, model_Dyna_plus]
-        # track cumulative reward in current run
-        rewards_ = np.zeros(shape=(2, maxSteps))
+                               gamma=gamma,
+                               kappa=kappa)
+
+        model_Dyna_plus_PS = Dyna(rand=rand,
+                               maze=blockingMaze,
+                               planningSteps=planningSteps,
+                               qLearning=True,
+                               expected=False,
+                               alpha=alpha,
+                               plus=True,
+                               gamma=gamma,
+                               kappa=kappa*100,
+                               priority=True,
+                               theta=theta)
+
+        model_Dyna_UCB = Dyna(rand=rand,
+                               maze=blockingMaze,
+                               planningSteps=planningSteps,
+                               qLearning=True,
+                               expected=False,
+                               alpha=alpha,
+                               ucb=ucb,
+                               gamma=gamma,)
+
+        models = [model_Dyna_UCB, model_Dyna, model_Dyna_plus, model_Dyna_plus_PS]
         for i, model in enumerate(models):
             print('run:', run, model.name)
 
@@ -238,7 +269,9 @@ def figure8_6():
             lastSteps = steps
             while steps < maxSteps:
                 # play for an episode
-                steps += model.play()
+                step_eps = model.play(environ_step=True)
+                print(step_eps)
+                steps += step_eps
                 # update cumulateive rewards
                 steps_ = min(steps, maxSteps-1)
                 rewards_[i, lastSteps:steps_] = rewards_[i, lastSteps]
@@ -385,10 +418,10 @@ def figure8_7_multiprocessing():
                         height=6,
                         start_state=[2, 0],
                         goal_states=[[0, 8]],
-                        return_to_start=False,
+                        return_to_start=True,
                         reward_goal=1.0,
                         reward_move=0.0,
-                        reward_obstacle=0.0
+                        reward_obstacle=-1.0
                         )
     original_maze.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
 
@@ -485,22 +518,19 @@ def figure8_7_multiprocessing():
 
 def figure8_7_A_star():
     # get the original 6*9 maze
-    original_maze = Maze(width=9,
-                        height=6,
-                        start_state=[2, 0],
-                        goal_states=[[0, 8]],
-                        return_to_start=False,
-                        reward_goal=1.0,
-                        reward_move=0.0,
-                        reward_obstacle=0.0
-                        )
+    original_maze = Maze(height=6,
+                         width=9,
+                         start_state=[2, 0],
+                         goal_states=[[0, 8]],
+                         return_to_start=True,
+                         reward_goal=0.0,
+                         reward_move=-1.0,
+                         reward_obstacle=-100.0)
     original_maze.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
-
+    resize_idx = 2
     # say 1st maze has w * h states, then k-th maze has w * h * k * k states
-    numOfMazes = 1
     # build all the mazes
-    resize_idx = 5
-    mazes = [original_maze.extendMaze(i) for i in range(resize_idx, numOfMazes + 1)]
+    mazes = [original_maze.extendMaze(i) for i in range(resize_idx, resize_idx + 1)]
     # Dyna model hyper
     rand = np.random.RandomState(0)
     planningSteps = 5
@@ -510,13 +540,142 @@ def figure8_7_A_star():
     epsilon = 0.1
     # track the # of backups
 
-    start_time = timer()
-    pool = Pool(processes=5)
-    backups = np.zeros((2, numOfMazes))
+    pool = Pool(processes=1)
+    runs = 1
+    numOfMazes = 1
+    numOfModels = 4
+    backups = np.zeros((runs, numOfModels, numOfMazes))
 
     for mazeIndex, maze in enumerate(mazes):
         maze.GOAL_STATES = [maze.GOAL_STATES[0]]
-        model_Dyna_PS_Q = Dyna(rand=rand,
+        ############## A star search algorithm  ######################################
+        start_time = timer()
+        diagram = convert_maze_to_grid(maze)
+        came_from, cost_so_far, go_to = a_star_search_3D(diagram, tuple(maze.START_STATE),
+                                                  [tuple(maze.GOAL_STATES[0])])
+        go_to, step_optim = walk_final_grid_go_to(tuple(maze.START_STATE), tuple(maze.GOAL_STATES[0]), came_from)
+        draw_grid(diagram, width=3, point_to=came_from, start=tuple(maze.START_STATE),
+                  goal=tuple(maze.GOAL_STATES[0]))
+        print('Finish, using %.2f sec!' % (timer() - start_time))
+        ##############End  A star search algorithm  ######################################
+        model_Dyna_Prioritized_Sweeping_ES = Dyna(rand=rand,
+                                         maze=maze,
+                                         epsilon=epsilon,
+                                         gamma=gamma,
+                                         planningSteps=planningSteps,
+                                         qLearning=False,
+                                         expected=True,
+                                         alpha=alpha,
+                                         priority=True,
+                                         theta=theta)
+
+        model_Dyna_Prioritized_Sweeping_Q = Dyna(rand=rand,
+                                         maze=maze,
+                                         epsilon=epsilon,
+                                         gamma=gamma,
+                                         planningSteps=planningSteps,
+                                         qLearning=True,
+                                         expected=False,
+                                         alpha=alpha,
+                                         priority=True,
+                                         theta=theta)
+
+        model_Dyna_Prioritized_Sweeping_A_star_ES = Dyna(rand=rand,
+                                                     maze=maze,
+                                                     epsilon=epsilon,
+                                                     gamma=gamma,
+                                                     planningSteps=planningSteps,
+                                                     qLearning=False,
+                                                     expected=True,
+                                                     alpha=alpha,
+                                                     priority=True,
+                                                     theta=theta,
+                                                     policy_init=go_to)
+
+        model_Dyna_Prioritized_Sweeping_A_star_Q = Dyna(rand=rand,
+                                                     maze=maze,
+                                                     epsilon=epsilon,
+                                                     gamma=gamma,
+                                                     planningSteps=planningSteps,
+                                                     qLearning=True,
+                                                     expected=False,
+                                                     alpha=alpha,
+                                                     priority=True,
+                                                     theta=theta,
+                                                     policy_init=go_to)
+
+        models = [model_Dyna_Prioritized_Sweeping_A_star_Q, model_Dyna_Prioritized_Sweeping_Q,
+                  model_Dyna_Prioritized_Sweeping_A_star_ES, model_Dyna_Prioritized_Sweeping_ES]
+
+        for m, model in enumerate(models):
+            for run in range(0, runs):
+                print('run:', run, model.name, 'maze size:', maze.WORLD_HEIGHT * maze.WORLD_WIDTH)
+                start_time = timer()
+                result = pool.apply_async(model_play_worker, [model])
+                backups[run][m][mazeIndex] = np.sum(result.get())
+                print('Finish, using %.2f sec!' % (timer() - start_time))
+
+    pool.close()
+
+    # Dyna-Q performs several backups per step
+    backups = np.sum(backups, axis=0)
+    # average over independent runs
+    backups /= float(runs)
+
+    print(backups)
+
+
+def figure8_7_3D():
+    # get the original 6*9 maze
+    time_length = 20
+    maze = Maze_3D(height=7,
+                width=9,
+                time_length=time_length,
+                start_state=(2, 0, 0),
+                goal_states=[[0, 8]],
+                return_to_start=True,
+                reward_goal=1.0,
+                reward_move=0.0,
+                reward_obstacle=0.0)
+    # set up goal states
+    gs = []
+    for t in range(time_length):
+        gs.append(tuple([0, 8, t]))
+    maze.GOAL_STATES = gs
+    # set up obstacles
+    obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
+    for t in range(time_length-5):
+        for item in obstacles:
+            maze.obstacles_weight[item[0], item[1], t] = 1
+    obstacles = [[2, 4], [3, 4], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
+    for t in range(5, time_length):
+        for item in obstacles:
+            maze.obstacles_weight[item[0], item[1], t] = 1
+    mazes = [maze]
+    # Dyna model hyper
+    rand = np.random.RandomState(0)
+    planningSteps = 5
+    alpha = 0.5
+    gamma = 0.95
+    theta = 1e-4
+    epsilon = 0.1
+    # track the # of backups
+    runs = 1
+    numOfMazes = 1
+    numOfModels = 3
+    backups = np.zeros((runs, numOfModels, numOfMazes))
+
+    for mazeIndex, maze in enumerate(mazes):
+        ############## A star search algorithm  ######################################
+        start_time = timer()
+        diagram = convert_3Dmaze_to_grid(maze)
+        came_from, cost_so_far, go_to = a_star_search_3D(diagram, tuple(maze.START_STATE), maze.GOAL_STATES)
+        if True:
+            draw_grid_3d(diagram, came_from=came_from, start=tuple(maze.START_STATE),
+                         goal=tuple(maze.GOAL_STATES), title='A star')
+        print('Finish, using %.2f sec!' % (timer() - start_time))
+        ##############End  A star search algorithm  ######################################
+        model_Dyna_Q = Dyna_3D(rand=rand,
                              maze=maze,
                              epsilon=epsilon,
                              gamma=gamma,
@@ -524,35 +683,61 @@ def figure8_7_A_star():
                              qLearning=True,
                              expected=False,
                              alpha=alpha,
-                             priority=True,
-                             theta=theta)
+                             priority=False)
 
+        model_Dyna_Prioritized_Sweeping_ES = Dyna_3D(rand=rand,
+                                         maze=maze,
+                                         epsilon=epsilon,
+                                         gamma=gamma,
+                                         planningSteps=planningSteps,
+                                         qLearning=False,
+                                         expected=True,
+                                         alpha=alpha,
+                                         priority=True,
+                                         theta=theta)
 
-        models = [model_Dyna_PS_Q]
+        model_Dyna_Prioritized_Sweeping_Q = Dyna_3D(rand=rand,
+                                         maze=maze,
+                                         epsilon=epsilon,
+                                         gamma=gamma,
+                                         planningSteps=planningSteps,
+                                         qLearning=True,
+                                         expected=False,
+                                         alpha=alpha,
+                                         priority=True,
+                                         theta=theta)
+
+        models = [model_Dyna_Q, model_Dyna_Prioritized_Sweeping_Q, model_Dyna_Prioritized_Sweeping_ES]
+
         for m, model in enumerate(models):
             for run in range(0, runs):
                 print('run:', run, model.name, 'maze size:', maze.WORLD_HEIGHT * maze.WORLD_WIDTH)
-                result = pool.apply_async(model_play_worker, [model])
-                backups[run][m][mazeIndex] = np.sum(result.get())
+                start_time = timer()
+                # track steps / backups for each episode
+                steps = []
+                # play for an episode
+                while True:
+                    steps.append(model.play())
+                    # print best action w.r.t. current state-action values
+                    # printActions(currentStateActionValues, maze)
+                    # check whether the (relaxed) optimal path is found
+                    came_from = model.checkPath()
+                    if came_from:
+                        draw_grid_3d(diagram, came_from=came_from, start=tuple(maze.START_STATE),
+                                     goal=tuple(maze.GOAL_STATES), title=model.name)
 
-    pool.close()
-    print('Finish, using %.2f sec!' % (timer() - start_time))
+                        break
+
+                backups[run][m][mazeIndex] = np.sum(steps)
+                print('Finish, using %.2f sec!' % (timer() - start_time))
 
     # Dyna-Q performs several backups per step
     backups = np.sum(backups, axis=0)
     # average over independent runs
     backups /= float(runs)
-
-    plt.figure(3)
-    for i in range(0, len(models)):
-        plt.plot(np.arange(resize_idx, numOfMazes + 1), backups[i, :], label=models[i].name)
-    plt.xlabel('maze resolution factor')
-    plt.ylabel('backups until optimal solution')
-    plt.yscale('log')
-    plt.legend()
-    print('Finish')
+    print(backups)
     plt.show()
 
 
 if __name__ == "__main__":
-    figure8_7_multiprocessing()
+    figure8_7_3D()

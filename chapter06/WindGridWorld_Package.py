@@ -1,8 +1,9 @@
 from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
-from chapter08.Maze import Maze, convert_maze_to_grid, draw_grid
+from chapter08.Maze import Maze
 from chapter08.Dyna import Dyna
+#from chapter08.Astar import convert_maze_to_grid, draw_grid
 
 
 def main():
@@ -21,6 +22,7 @@ def main():
     # wind strength for each column
     stochastic_wind_direction = 0   # 'UP'
     stochastic_wind = np.asarray([[0, 0, 0, 1, 1, 1, 2, 2, 1, 0]] * 7)
+    stochastic_wind = []
 
     # set up an instance for DynaMaze
     maze = Maze(height=7,

@@ -1,7 +1,7 @@
 import numpy as np
 import heapq
 import itertools
-import random
+
 
 class PriorityQueue:
     def __init__(self):
@@ -34,7 +34,7 @@ class PriorityQueue:
         raise KeyError('pop from an empty priority queue')
 
 
-class Dyna:
+class Dyna_3D:
     """
     # model for planning in Dyna
     """
@@ -65,7 +65,7 @@ class Dyna:
         self.model = dict()
         self.rand = rand
         self.maze = maze
-        self.stateActionValues = np.zeros((maze.WORLD_HEIGHT, maze.WORLD_WIDTH, len(maze.actions)))
+        self.stateActionValues = np.zeros((maze.WORLD_HEIGHT, maze.WORLD_WIDTH, maze.TIME_LENGTH, len(maze.actions)))
         # expected sarsa
         self.expected = expected
         # Q-learning
@@ -251,7 +251,7 @@ class Dyna:
 
         # we will execute the following if action was not selected by
         # (1) epsilon greedy (2) no Astar policy
-        values = self.stateActionValues[state[0], state[1], :]
+        values = self.stateActionValues[state[0], state[1], state[2], :]
         return np.random.choice([action for action, value in enumerate(values) if value == np.max(values)])
 
     def play(self, environ_step=False):
@@ -266,9 +266,11 @@ class Dyna:
         """
         currentState = self.maze.START_STATE
         steps = 0
-        while currentState not in self.maze.GOAL_STATES:
+        while tuple(currentState) not in self.maze.GOAL_STATES:
             ######################## Interaction with the environment ###############################
             # track the steps
+            if steps % 100 == 0:
+                print(steps)
             steps += 1
             # get action
             if steps == 1 or self.qlearning:
@@ -278,30 +280,29 @@ class Dyna:
 
             if self.qlearning:
                 # Q-Learning update
-                action_value_delta = reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], :]) - \
-                                     self.stateActionValues[currentState[0], currentState[1], currentAction]
+                action_value_delta = reward + self.gamma * np.max(self.stateActionValues[newState[0], newState[1], newState[2], :]) - \
+                                     self.stateActionValues[currentState[0], currentState[1], currentState[2], currentAction]
             else:
                 # sarsa or expected sarsa update
                 if not self.expected:
                     newAction = self.chooseAction(newState)
-                    valueTarget = self.stateActionValues[newState[0], newState[1], newAction]
+                    valueTarget = self.stateActionValues[newState[0], newState[1], newState[2], newAction]
                 elif self.expected:
                     # calculate the expected value of new state
                     valueTarget = 0.0
-                    actionValues = self.stateActionValues[newState[0], newState[1], :]
+                    actionValues = self.stateActionValues[newState[0], newState[1], newState[2], :]
                     bestActions = np.argwhere(actionValues == np.max(actionValues))
                     for action in self.maze.actions:
                         if action in bestActions:
                             valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) * \
-                                           self.stateActionValues[newState[0], newState[1], action]
+                                           self.stateActionValues[newState[0], newState[1], newState[2], action]
                         else:
-                            valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[
-                                newState[0], newState[1], action]
+                            valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[newState[0], newState[1], newState[2], action]
                 # Sarsa update
-                action_value_delta = reward + self.gamma * valueTarget - self.stateActionValues[currentState[0], currentState[1], currentAction]
+                action_value_delta = reward + self.gamma * valueTarget - self.stateActionValues[currentState[0], currentState[1], currentState[2], currentAction]
 
             if not self.priority:
-                self.stateActionValues[currentState[0], currentState[1], currentAction] += self.alpha * action_value_delta
+                self.stateActionValues[currentState[0], currentState[1], currentState[2], currentAction] += self.alpha * action_value_delta
             else:
                 priority = np.abs(action_value_delta)
                 if priority > self.theta:
@@ -331,28 +332,27 @@ class Dyna:
                     stateSample, actionSample, newStateSample, rewardSample = self.sample()
 
                 if self.qlearning:
-                    action_value_delta = rewardSample + self.gamma * np.max(self.stateActionValues[newStateSample[0], newStateSample[1], :]) - \
-                                         self.stateActionValues[stateSample[0], stateSample[1], actionSample]
+                    action_value_delta = rewardSample + self.gamma * np.max(self.stateActionValues[newStateSample[0], newStateSample[1], newStateSample[2], :]) - \
+                                         self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], actionSample]
                 else:
                     # sarsa or expected sarsa update
                     if not self.expected:
                         newAction_sample = self.chooseAction(newStateSample)
-                        valueTarget = self.stateActionValues[newStateSample[0], newStateSample[1], newAction_sample]
+                        valueTarget = self.stateActionValues[newStateSample[0], newStateSample[1], newStateSample[2], newAction_sample]
                     elif self.expected:
                         # calculate the expected value of new state
                         valueTarget = 0.0
-                        actionValues = self.stateActionValues[newStateSample[0], newStateSample[1], :]
+                        actionValues = self.stateActionValues[newStateSample[0], newStateSample[1], newStateSample[2], :]
                         bestActions = np.argwhere(actionValues == np.max(actionValues))
                         for action in self.maze.actions:
                             if action in bestActions:
                                 valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) * \
-                                               self.stateActionValues[newStateSample[0], newStateSample[1], action]
+                                               self.stateActionValues[newStateSample[0], newStateSample[1], newStateSample[2], action]
                             else:
-                                valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[
-                                    newStateSample[0], newStateSample[1], action]
+                                valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[newStateSample[0], newStateSample[1], newStateSample[2],action]
                                 # Sarsa update
-                    action_value_delta = rewardSample + self.gamma * valueTarget - self.stateActionValues[stateSample[0], stateSample[1], actionSample]
-                self.stateActionValues[stateSample[0], stateSample[1], actionSample] += self.alpha * action_value_delta
+                    action_value_delta = rewardSample + self.gamma * valueTarget - self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], actionSample]
+                self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], actionSample] += self.alpha * action_value_delta
 
                 if self.priority:
                     # deal with all the predecessors of the sample states
@@ -361,27 +361,26 @@ class Dyna:
                     for statePre, actionPre, rewardPre in self.get_predecessor(stateSample):
                         if self.qlearning:
                             action_value_delta = rewardPre + self.gamma * np.max(
-                                self.stateActionValues[stateSample[0], stateSample[1], :]) - \
-                                                 self.stateActionValues[statePre[0], statePre[1], actionPre]
+                                self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], :]) - \
+                                                 self.stateActionValues[statePre[0], statePre[1], statePre[2], actionPre]
                         else:
                             # sarsa or expected sarsa update
                             if not self.expected:
                                 newAction_sample = self.chooseAction(stateSample)
-                                valueTarget = self.stateActionValues[stateSample[0], stateSample[1], newAction_sample]
+                                valueTarget = self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], newAction_sample]
                             elif self.expected:
                                 # calculate the expected value of new state
                                 valueTarget = 0.0
-                                actionValues = self.stateActionValues[stateSample[0], stateSample[1], :]
+                                actionValues = self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], :]
                                 bestActions = np.argwhere(actionValues == np.max(actionValues))
                                 for action in self.maze.actions:
                                     if action in bestActions:
                                         valueTarget += ((1.0 - self.epsilon) / len(bestActions) + self.epsilon / len(self.maze.actions)) * \
-                                                       self.stateActionValues[stateSample[0], stateSample[1], action]
+                                                       self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], action]
                                     else:
-                                        valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[
-                                            stateSample[0], stateSample[1], action]
+                                        valueTarget += self.epsilon / len(self.maze.actions) * self.stateActionValues[stateSample[0], stateSample[1], stateSample[2], action]
                                         # Sarsa update
-                            action_value_delta = rewardPre + self.gamma * valueTarget - self.stateActionValues[statePre[0], statePre[1], actionPre]
+                            action_value_delta = rewardPre + self.gamma * valueTarget - self.stateActionValues[statePre[0], statePre[1], statePre[2], actionPre]
                         priority = np.abs(action_value_delta)
 
                         if priority > self.theta:
@@ -396,39 +395,6 @@ class Dyna:
 
         return steps
 
-    def walk_final_grid(self):
-        """
-        A helper function to walk the whole grid world
-        :return:
-        """
-        came_from = {}
-        cost_so_far = {}
-        came_from[tuple(self.maze.START_STATE)] = None
-        cost_so_far[tuple(self.maze.START_STATE)] = 0
-        # we use the maximum here directly
-        self.epsilon = 0
-
-        currentState = self.maze.START_STATE
-        steps = 0
-        while currentState not in self.maze.GOAL_STATES:
-            # track the steps
-            steps += 1
-
-            # get action
-            action = np.argmax(self.stateActionValues[currentState[0], currentState[1], :])
-            # take action
-            newState, reward = self.maze.takeAction(currentState, action)
-            cost_so_far[tuple(newState)] = reward
-            came_from[tuple(newState)] = tuple(currentState)
-            currentState = newState
-
-            # check whether it has exceeded the step limit
-            if steps > self.maze.maxSteps:
-                print(currentState)
-                break
-
-        return came_from, cost_so_far
-
     def checkPath(self):
         """
         This function only apply to Sutton book Chapter 8.
@@ -436,18 +402,20 @@ class Dyna:
         :return:
         """
         # get the length of optimal path
-        # 14 is the length of optimal path of the original maze
+        # 16 is the length of optimal path of the original maze
         # 1.2 means it's a relaxed optifmal path
-        maxSteps = 14 * self.maze.resolution * 1.2
+        maxSteps = 16 * self.maze.resolution * 1.2
         currentState = self.maze.START_STATE
         steps = 0
-        while currentState not in self.maze.GOAL_STATES:
-            bestAction = np.argmax(self.stateActionValues[currentState[0], currentState[1], :])
-            currentState, _ = self.maze.takeAction(currentState, bestAction)
+        came_from = {}
+        came_from[currentState] = None
+        while tuple(currentState) not in self.maze.GOAL_STATES:
+            bestAction = np.argmax(self.stateActionValues[currentState[0], currentState[1], currentState[2], :])
+            nextState, _ = self.maze.takeAction(currentState, bestAction)
+            came_from[tuple(nextState)] = tuple(currentState)
+            currentState = nextState
             steps += 1
             if steps > maxSteps:
                 return False
 
-        return True
-
-
+        return came_from
